@@ -159,6 +159,7 @@ async function handleHttp(request, response) {
 const server = http.createServer(handleHttp)
 const io = new Server(server, { cors: { origin: true, methods: ['GET', 'POST'] } })
 const rooms = new Map()
+const roomLoads = new Map()
 const reports = []
 const disconnectTimers = new Map()
 const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
@@ -295,16 +296,25 @@ function getRoom(code) {
 
 async function hydrateRoom(code) {
   if (rooms.has(code)) return rooms.get(code)
+  if (roomLoads.has(code)) return roomLoads.get(code)
+  const load = (async () => {
+    try {
+      const saved = await database.loadRoom(code)
+      if (saved && typeof saved === 'object') {
+        const room = { ...blankRoom(), ...saved, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null } }
+        normalizeHosts(room)
+        rooms.set(code, room)
+        return room
+      }
+    } catch (error) { console.error('Could not load room from database:', error.message) }
+    return getRoom(code)
+  })()
+  roomLoads.set(code, load)
   try {
-    const saved = await database.loadRoom(code)
-    if (saved && typeof saved === 'object') {
-      const room = { ...blankRoom(), ...saved, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null } }
-      normalizeHosts(room)
-      rooms.set(code, room)
-      return room
-    }
-  } catch (error) { console.error('Could not load room from database:', error.message) }
-  return getRoom(code)
+    return await load
+  } finally {
+    if (roomLoads.get(code) === load) roomLoads.delete(code)
+  }
 }
 
 function broadcastRoom(code) {
