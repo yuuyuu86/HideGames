@@ -695,7 +695,7 @@ function QuizGame({ paused, sharedState, syncState, members, playerId }: { pause
 
 function MemoryGame({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
   const deck = ['●','▲','■','◆','★','♥','●','▲','■','◆','★','♥']
-  const state = (sharedState as { open?: number[]; matched?: number[]; turn?: string; score?: Record<string, number> } | undefined) ?? {}
+  const state = (sharedState as { open?: number[]; matched?: number[]; turn?: string; score?: Record<string, number>; winner?: string } | undefined) ?? {}
   const open = state.open ?? []; const matched = state.matched ?? []; const turn = state.turn ?? members[0]?.id ?? playerId; const score = state.score ?? Object.fromEntries(members.map(member => [member.id, 0]))
   const flip = (index: number) => {
     if (paused || turn !== playerId || open.length >= 2 || open.includes(index) || matched.includes(index)) return
@@ -705,22 +705,23 @@ function MemoryGame({ paused, sharedState, syncState, members, playerId }: { pau
     const nextMatched = paired ? [...matched, ...nextOpen] : matched
     const nextScore = paired ? { ...score, [playerId]: (score[playerId] ?? 0) + 1 } : score
     const nextTurn = paired ? playerId : members[(members.findIndex(member => member.id === turn) + 1) % members.length]?.id ?? playerId
-    syncState({ open: nextOpen, matched: nextMatched, turn: nextTurn, score: nextScore })
-    window.setTimeout(() => syncState({ open: [], matched: nextMatched, turn: nextTurn, score: nextScore }), 900)
+    const nextWinner=nextMatched.length===deck.length?members.reduce((best,member)=>(nextScore[member.id]??0)>(nextScore[best.id]??0)?member:best,members[0])?.id:undefined
+    syncState({ open: nextOpen, matched: nextMatched, turn: nextTurn, score: nextScore, winner: nextWinner })
+    window.setTimeout(() => syncState({ open: [], matched: nextMatched, turn: nextTurn, score: nextScore, winner: nextWinner }), 900)
   }
-  const winner = matched.length === deck.length ? members.reduce((best, member) => (score[member.id] ?? 0) > (score[best.id] ?? 0) ? member : best, members[0]) : null
+  const winner = state.winner ? members.find(member=>member.id===state.winner) : matched.length === deck.length ? members.reduce((best, member) => (score[member.id] ?? 0) > (score[best.id] ?? 0) ? member : best, members[0]) : null
   return <div className="board-game memory-game"><div className="game-top"><div><span className="tag">CARD / MEMORY</span><h1>神経衰弱</h1></div><div className="turn-pill">{winner ? `${winner?.name} の勝ち！` : `${members.find(member => member.id === turn)?.name ?? 'あなた'} の番`}</div></div><div className="memory-layout"><section className="memory-board">{deck.map((symbol, index) => { const shown = open.includes(index) || matched.includes(index); return <button key={index} className={`memory-card ${shown ? 'shown' : ''} ${matched.includes(index) ? 'matched' : ''}`} disabled={paused || Boolean(winner)} onClick={() => flip(index)} aria-label={`${index + 1}枚目のカード`}>{shown ? symbol : '?'}</button> })}</section><section className="memory-score panel"><h2>ペア数</h2>{members.map(member => <div key={member.id}><span>{member.name}</span><strong>{score[member.id] ?? 0}</strong></div>)}<p>{matched.length / 2} / {deck.length / 2} ペア発見</p></section></div></div>
 }
 
 function MinesGame({ paused, sharedState, syncState }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void }) {
   const width = 8; const mines = [3, 10, 14, 21, 26, 39, 45, 50, 59]
-  const state = (sharedState as { revealed?: number[]; flags?: number[]; lost?: boolean } | undefined) ?? {}
+  const state = (sharedState as { revealed?: number[]; flags?: number[]; lost?: boolean; won?: boolean } | undefined) ?? {}
   const revealed = state.revealed ?? []; const flags = state.flags ?? []; const lost = Boolean(state.lost)
   const around = (index: number) => { const row = Math.floor(index / width), col = index % width; return [-1,0,1].flatMap(dy => [-1,0,1].map(dx => [row + dy, col + dx])).filter(([y,x]) => !(y === row && x === col) && y >= 0 && y < width && x >= 0 && x < width).map(([y,x]) => y * width + x).filter(cell => mines.includes(cell)).length }
-  const open = (index: number) => { if (paused || lost || flags.includes(index) || revealed.includes(index)) return; if (mines.includes(index)) { syncState({ revealed: [...revealed, index], flags, lost: true }); return }; const next = new Set(revealed); const visit = (cell: number) => { if (next.has(cell) || mines.includes(cell) || flags.includes(cell)) return; next.add(cell); if (around(cell) === 0) { const row = Math.floor(cell / width), col = cell % width; [-1,0,1].forEach(dy => [-1,0,1].forEach(dx => { const y = row + dy, x = col + dx; if ((dx || dy) && y >= 0 && y < width && x >= 0 && x < width) visit(y * width + x) })) } }; visit(index); syncState({ revealed: [...next], flags, lost: false }) }
+  const open = (index: number) => { if (paused || lost || state.won || flags.includes(index) || revealed.includes(index)) return; if (mines.includes(index)) { syncState({ revealed: [...revealed, index], flags, lost: true, won: false }); return }; const next = new Set(revealed); const visit = (cell: number) => { if (next.has(cell) || mines.includes(cell) || flags.includes(cell)) return; next.add(cell); if (around(cell) === 0) { const row = Math.floor(cell / width), col = Math.floor(cell % width); [-1,0,1].forEach(dy => [-1,0,1].forEach(dx => { const y = row + dy, x = col + dx; if ((dx || dy) && y >= 0 && y < width && x >= 0 && x < width) visit(y * width + x) })) } }; visit(index); const nextRevealed=[...next]; syncState({ revealed: nextRevealed, flags, lost: false, won: nextRevealed.length === width * width - mines.length }) }
   const flag = (index: number) => { if (paused || lost || revealed.includes(index)) return; syncState({ revealed, flags: flags.includes(index) ? flags.filter(cell => cell !== index) : [...flags, index], lost }) }
-  const won = !lost && revealed.length === width * width - mines.length
-  const reset = () => syncState({ revealed: [], flags: [], lost: false })
+  const won = Boolean(state.won) || !lost && revealed.length === width * width - mines.length
+  const reset = () => syncState({ revealed: [], flags: [], lost: false, won: false })
   return <div className="board-game mines-game"><div className="game-top"><div><span className="tag">CO-OP / PUZZLE</span><h1>協力マインスイーパー</h1></div><div className="turn-pill">旗 {flags.length} / {mines.length}</div></div><p className="game-hint">左クリックで開く、右クリックで旗を置く。全員で地雷を避けよう。</p>{(lost || won) && <div className={`mines-result ${won ? 'win' : 'loss'}`}><b>{won ? '協力クリア！' : '地雷に当たりました'}</b><button className="primary" onClick={reset}>もう一度</button></div>}<section className="mines-board">{Array.from({ length: 64 }, (_, index) => { const opened = revealed.includes(index); const count = around(index); return <button key={index} className={`${opened ? 'opened' : ''} ${opened && mines.includes(index) ? 'mine' : ''}`} onClick={() => open(index)} onContextMenu={event => { event.preventDefault(); flag(index) }} disabled={paused || lost || won}>{opened ? (mines.includes(index) ? '地雷' : count || '') : flags.includes(index) ? '旗' : ''}</button> })}</section></div>
 }
 

@@ -270,7 +270,7 @@ function blankRoom() {
 function gameRoundFinished(room) {
   const state = room.gameState?.[room.game]
   if (!state || typeof state !== 'object') return false
-  return Boolean(state.draw || state.finished || state.lost || state.loser || (Object.hasOwn(state, 'winner') && state.winner !== null && state.winner !== undefined))
+  return Boolean(state.draw || state.finished || state.lost || state.won || state.completed || state.loser || (Object.hasOwn(state, 'winner') && state.winner !== null && state.winner !== undefined))
 }
 
 function normalizeHosts(room) {
