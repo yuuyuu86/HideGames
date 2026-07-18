@@ -100,7 +100,11 @@ export function useRoomSession() {
       if (next.resume && typeof next.resume === 'object') setResume(next.resume)
       if (typeof next.access?.locked === 'boolean') setRoomLocked(next.access.locked)
     })
-    client.on('room:error', ({ message }) => setRoomError(typeof message === 'string' ? message : 'ルームに参加できませんでした'))
+    client.on('room:error', ({ message }) => {
+      const nextMessage = typeof message === 'string' ? message : 'ルームに参加できませんでした'
+      setRoomError(nextMessage)
+      window.dispatchEvent(new CustomEvent('hidegames-room-error', { detail: nextMessage }))
+    })
     client.on('room:private', ({ game, state }) => { if (typeof game === 'string') setPrivateState(current => ({ ...current, [game]: state })) })
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
     return () => { client.close() }

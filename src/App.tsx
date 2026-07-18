@@ -709,6 +709,11 @@ function RoomScreen({ start, selected, members, localMemberId, roomCode, onJoinR
   const [roomError, setRoomError] = useState('')
   const [sideTab, setSideTab] = useState<'memo' | 'drawing'>('memo')
   const [showRules, setShowRules] = useState(false)
+  useEffect(() => {
+    const showError = (event: Event) => { const message = (event as CustomEvent<string>).detail; if (typeof message === 'string') setRoomError(message) }
+    window.addEventListener('hidegames-room-error', showError)
+    return () => window.removeEventListener('hidegames-room-error', showError)
+  }, [])
   const GameIcon = selected.Icon
   const local = members.find(member => member.id === localMemberId)
   const reconnecting = members.filter(member => member.connected === false)
