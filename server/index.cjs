@@ -287,7 +287,9 @@ function canUpdateMahjongWin(room, previous, nextState, senderId) {
   if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.openMelds, nextState.openMelds) || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
   const payments = nextState.winInfo.payments
   const dealerRon = payments?.ron?.dealer, nonDealerRon = payments?.ron?.nonDealer, dealerPays = payments?.tsumo?.dealerPays, nonDealerPays = payments?.tsumo?.nonDealerPays
-  if (![dealerRon, nonDealerRon, dealerPays, nonDealerPays].every(value => Number.isInteger(value) && value >= 100 && value <= 48_000) || dealerRon !== dealerPays * 3 || nonDealerRon !== nonDealerPays * 4) return false
+  // Multiple yakuman can legitimately exceed a single-yakuman ron payment.
+  // The client currently supports up to triple yakuman (144,000 dealer ron).
+  if (![dealerRon, nonDealerRon, dealerPays, nonDealerPays].every(value => Number.isInteger(value) && value >= 100 && value <= 144_000) || dealerRon !== dealerPays * 3 || nonDealerRon !== nonDealerPays * 4) return false
   const scores = { ...Object.fromEntries(room.members.map(member => [member.id, 25_000])), ...(previous.scores ?? {}) }
   const winnerIsDealer = previous.seatWinds?.[senderId] === 1
   if (nextState.winType === 'ron') {
