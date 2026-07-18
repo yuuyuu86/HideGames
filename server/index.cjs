@@ -160,6 +160,7 @@ const server = http.createServer(handleHttp)
 const io = new Server(server, { cors: { origin: true, methods: ['GET', 'POST'] } })
 const rooms = new Map()
 const roomLoads = new Map()
+const roomSaves = new Map()
 const reports = []
 const disconnectTimers = new Map()
 const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
@@ -320,7 +321,11 @@ async function hydrateRoom(code) {
 function broadcastRoom(code) {
   const room = getRoom(code)
   io.to(code).emit('room:state', { ...room, access: { locked: Boolean(room.access?.passwordHash) } })
-  database.saveRoom(code, room).catch(error => console.error('Could not save room to database:', error.message))
+  const snapshot = JSON.parse(JSON.stringify(database.serializeRoom(room)))
+  const previous = roomSaves.get(code) ?? Promise.resolve()
+  const save = previous.catch(() => undefined).then(() => database.saveRoom(code, snapshot))
+  roomSaves.set(code, save)
+  save.catch(error => console.error('Could not save room to database:', error.message)).finally(() => { if (roomSaves.get(code) === save) roomSaves.delete(code) })
 }
 
 function tagState(room) {
