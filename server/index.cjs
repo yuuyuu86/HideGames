@@ -255,6 +255,32 @@ function canUpdateMahjongDiscard(room, previous, nextState, senderId) {
   return Boolean(nextState.exhausted) === (nextState.wall.length === 0)
 }
 
+function canUpdateMahjongWin(room, previous, nextState, senderId) {
+  if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
+  const payments = nextState.winInfo.payments
+  const dealerRon = payments?.ron?.dealer, nonDealerRon = payments?.ron?.nonDealer, dealerPays = payments?.tsumo?.dealerPays, nonDealerPays = payments?.tsumo?.nonDealerPays
+  if (![dealerRon, nonDealerRon, dealerPays, nonDealerPays].every(value => Number.isInteger(value) && value >= 100 && value <= 48_000) || dealerRon !== dealerPays * 3 || nonDealerRon !== nonDealerPays * 4) return false
+  const scores = { ...Object.fromEntries(room.members.map(member => [member.id, 25_000])), ...(previous.scores ?? {}) }
+  const winnerIsDealer = previous.seatWinds?.[senderId] === 1
+  if (nextState.winType === 'ron') {
+    const loserId = previous.lastDiscard?.owner
+    if (!loserId || loserId === senderId || !sameState(nextState.lastDiscard, previous.lastDiscard)) return false
+    const payment = winnerIsDealer ? dealerRon : nonDealerRon
+    scores[senderId] += payment + (previous.riichiPot ?? 0)
+    scores[loserId] = (scores[loserId] ?? 25_000) - payment
+  } else {
+    if (previous.turn !== senderId || nextState.lastDiscard !== undefined) return false
+    for (const member of room.members) {
+      if (member.id === senderId) continue
+      const payment = previous.seatWinds?.[member.id] === 1 ? dealerPays : nonDealerPays
+      scores[senderId] += payment
+      scores[member.id] = (scores[member.id] ?? 25_000) - payment
+    }
+    scores[senderId] += previous.riichiPot ?? 0
+  }
+  return sameState(scores, nextState.scores) && (nextState.riichiPot ?? 0) === (previous.riichiPot ?? 0)
+}
+
 function canUpdateTetrisState(room, previous, nextState, senderId) {
   const beforePlayers = previous.players
   const afterPlayers = nextState.players
@@ -302,9 +328,8 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game === 'puzzle') return canUpdatePuzzleState(room, previous, nextState, senderId)
   if (game === 'mahjong') {
     if (canUpdateMahjongDiscard(room, previous, nextState, senderId)) return true
-    if (nextState.winner === senderId && nextState.winType === 'ron' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId) return true
+    if (canUpdateMahjongWin(room, previous, nextState, senderId)) return true
     if (isMahjongCall(room, previous, nextState, senderId)) return true
-    if (nextState.winner === senderId && nextState.winType === 'tsumo' && previous.turn === senderId) return true
     return Boolean(previous.turn === senderId && ['ankan', 'kakan'].includes(nextState.calledMeld?.kind) && !nextState.winner && !nextState.winInfo && sameState(previous.scores, nextState.scores))
   }
   const colors = colorTurnGames[game]
