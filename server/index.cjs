@@ -480,6 +480,10 @@ io.on('connection', socket => {
         }, 3050)
       }
     }
+    if (event.type === 'resume-cancel') {
+      if (!isHost || !room.paused || !room.resume?.startsAt) return broadcastRoom(code)
+      room.resume = { readyIds: [] }
+    }
     if (event.type === 'game-state' && typeof event.game === 'string' && event.game.length <= 40 && event.state && JSON.stringify(event.state).length <= 200000) {
       if (!canUpdateGameState(room, event.game, event.state, socket.data.memberId, isHost)) return broadcastRoom(code)
       if (event.game === 'youtube' && !hasOnlySafeExternalLinks(event.state)) return broadcastRoom(code)

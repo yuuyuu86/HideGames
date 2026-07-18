@@ -30,6 +30,7 @@ type Event =
   | { type: 'pause'; paused: boolean }
   | { type: 'away'; id: string; away: boolean }
   | { type: 'resume-ready'; id: string; ready: boolean }
+  | { type: 'resume-cancel' }
   | { type: 'game-state'; game: string; state: unknown }
   | { type: 'tag-mode'; mode: 'gems' | 'escape' | 'classic' | 'infection' | 'transform' | 'team' }
 
@@ -178,6 +179,7 @@ export function useRoomSession() {
     setPaused: (nextPaused: boolean) => publish({ type: 'pause', paused: nextPaused }),
     setAway: (away: boolean) => publish({ type: 'away', id: localMember.id, away }),
     setResumeReady: (ready: boolean) => publish({ type: 'resume-ready', id: localMember.id, ready }),
+    cancelResume: () => publish({ type: 'resume-cancel' }),
     setGameState: (game: string, state: unknown) => publish({ type: 'game-state', game, state }),
     setRoomPassword: (password: string) => socket.current?.connected && socket.current.emit('room:set-password', { password }),
     reportMember: (targetId: string, reason: string) => socket.current?.connected && socket.current.emit('room:report', { targetId, reason }),
