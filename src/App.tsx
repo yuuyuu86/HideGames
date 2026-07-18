@@ -173,6 +173,10 @@ function PauseOverlay({ awayNames, resume, playerId, memberCount, onReady, sendM
   </div>
 }
 
+function ConnectionOverlay() {
+  return <div className="pause-overlay" role="status" aria-live="assertive"><div className="pause-card"><div className="pause-icon"><Radio size={32} /></div><p className="eyebrow">RECONNECTING</p><h2>接続を待機中です</h2><p>ゲームは安全に停止しています。ネットワーク接続を確認し、自動再接続をお待ちください。</p></div></div>
+}
+
 function Othello({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
   type State = { board?: (string | null)[][]; turn?: 'b' | 'w'; winner?: 'b' | 'w' | null; finished?: boolean }
   const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
@@ -665,6 +669,7 @@ function App() {
     {(page === 'play' || page === 'room') && <ChatDock messages={room.messages} addMessage={room.sendChat} paused={room.paused} />}
     {(page === 'play' || page === 'room') && <VoiceChat members={room.members} playerId={room.localMember.id} sendSignal={room.sendSignal} onSignal={room.onSignal} />}
     {room.paused && <PauseOverlay awayNames={room.members.filter(member => member.away).map(member => member.name)} resume={room.resume} playerId={room.localMember.id} memberCount={room.members.length} onReady={room.setResumeReady} sendMessage={room.sendChat} />}
+    {(page === 'room' || page === 'play') && !room.connected && <ConnectionOverlay />}
     {showShortcut && <div className="shortcut-toast"><MonitorDown size={16} />離席モードを開始しました</div>}
   </div>
 }

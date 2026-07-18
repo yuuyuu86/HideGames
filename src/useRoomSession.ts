@@ -54,6 +54,7 @@ export function useRoomSession() {
   const [awayHistory, setAwayHistory] = useState<AwayHistoryItem[]>([])
   const [resume, setResume] = useState<ResumeState>({ readyIds: [] })
   const [roomLocked, setRoomLocked] = useState(false)
+  const [connected, setConnected] = useState(false)
   const [roomPassword, setRoomPassword] = useState(() => sessionStorage.getItem('hidegames.room-password') ?? '')
   const [roomError, setRoomError] = useState('')
   const [authRevision, setAuthRevision] = useState(0)
@@ -89,7 +90,9 @@ export function useRoomSession() {
     const url = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
     const client = io(url, { autoConnect: true, reconnectionAttempts: 3, timeout: 2000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
     socket.current = client
-    client.on('connect', () => client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword }))
+    client.on('connect', () => { setConnected(true); client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword }) })
+    client.on('disconnect', () => setConnected(false))
+    client.on('connect_error', () => setConnected(false))
     client.on('room:state', (next) => {
       if (Array.isArray(next.members)) setMembers(next.members)
       if (Array.isArray(next.messages)) setMessages(next.messages)
@@ -132,6 +135,7 @@ export function useRoomSession() {
     awayHistory,
     resume,
     roomLocked,
+    connected,
     roomError,
     localMember,
     roomCode,
