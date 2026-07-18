@@ -101,9 +101,17 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
   const [open, setOpen] = useState(true)
   const [text, setText] = useState('')
   const notifiedCount = useRef(messages.length)
+  const seenMessages = useRef(messages.length)
+  const [unread, setUnread] = useState(0)
   const [visible, setVisible] = useState(() => { try { return JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false } catch { return true } })
   useEffect(() => { const refresh = () => { try { setVisible(JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false) } catch { setVisible(true) } }; window.addEventListener('hidegames-preferences', refresh); return () => window.removeEventListener('hidegames-preferences', refresh) }, [])
   useEffect(() => { const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && open) { event.preventDefault(); setOpen(false) } }; window.addEventListener('keydown', closeOnEscape); return () => window.removeEventListener('keydown', closeOnEscape) }, [open])
+  useEffect(() => {
+    const added = Math.max(0, messages.length - seenMessages.current)
+    seenMessages.current = messages.length
+    if (open) { setUnread(0); return }
+    if (added) setUnread(current => current + added)
+  }, [messages.length, open])
   useEffect(() => {
     const previous = notifiedCount.current
     notifiedCount.current = messages.length
@@ -117,7 +125,7 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { addMessage(text.trim()); setText('') } }
   if (!visible) return null
   return <section className={`chat-dock ${open ? 'expanded' : ''}`} aria-label="ゲームチャット">
-    <button className="chat-title" onClick={() => setOpen(!open)} aria-expanded={open}><MessageCircle size={17} /><span>チャット</span>{!open && <b className="unread-dot">3</b>}<ChevronDown size={16} /></button>
+    <button className="chat-title" onClick={() => setOpen(value => !value)} aria-expanded={open}><MessageCircle size={17} /><span>チャット</span>{!open && unread > 0 && <b className="unread-dot" aria-label={`${unread}件の未読メッセージ`}>{unread > 99 ? '99+' : unread}</b>}<ChevronDown size={16} /></button>
     {open && <>
       <div className="chat-list">{messages.slice(-5).map((m, i) => <div className="chat-line" key={`${m.time}-${i}`}><span className={`tiny-avatar ${m.tone}`}>{initials(m.name)}</span><p><b>{m.name}</b><small>{m.time}</small><span>{m.text}</span></p></div>)}</div>
       <div className="chat-stamps" aria-label="定型メッセージ"><button type="button" onClick={()=>addMessage('よろしくお願いします')}>よろしく</button><button type="button" onClick={()=>addMessage('ナイスプレイ')}>ナイス</button><button type="button" onClick={()=>addMessage('少し待ってください')}>待って</button><button type="button" onClick={()=>addMessage('おつかれさまでした')}>おつかれ</button></div><form className="chat-form" onSubmit={submit}><input aria-label="チャットメッセージ" value={text} onChange={e => setText(e.target.value)} placeholder={paused ? '待機中のメッセージ…' : 'メッセージを入力…'} /><button aria-label="送信"><FaPaperPlane /></button></form>
