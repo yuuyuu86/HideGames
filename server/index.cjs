@@ -329,6 +329,7 @@ io.on('connection', socket => {
   socket.on('room:signal', ({ target, data }) => {
     const code = socket.data.roomCode
     if (!code || !target || !data || typeof target !== 'string') return
+    if (JSON.stringify(data).length > 20_000) return
     if (rateLimit('socket-signal', socket.id, 120, 10_000)) return
     for (const client of io.sockets.sockets.values()) {
       if (client.data.roomCode === code && client.data.memberId === target) client.emit('room:signal', { from: socket.data.memberId, target, data })
