@@ -26,7 +26,10 @@ app.on('open-url', (event, url) => { event.preventDefault(); openRoomLink(url) }
 app.whenReady().then(() => { app.setAsDefaultProtocolClient('hidegames'); awayShortcut = loadAwayShortcut(); createWindow(); if (!globalShortcut.register(awayShortcut, toggleAway)) { awayShortcut = 'CommandOrControl+Shift+H'; globalShortcut.register(awayShortcut, toggleAway) } const url = process.argv.find(arg => arg.startsWith('hidegames://')); if (url) openRoomLink(url); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() }) })
 ipcMain.handle('hide-window', hideWindow)
 ipcMain.handle('show-window', showWindow)
-ipcMain.handle('set-window-brightness', () => ({ supported: false }))
+// Native brightness control differs across operating systems and external displays.
+// Keep the explicit raise/restore protocol so a supported adapter can preserve the
+// original level without changing the away-state contract in the renderer.
+ipcMain.handle('set-window-brightness', (_event, _value, _restore = false) => ({ supported: false }))
 ipcMain.handle('set-away-shortcut', (_event, accelerator) => {
   if (typeof accelerator !== 'string' || !accelerator.trim()) return { ok: false, message: 'キーを入力してください' }
   const next = accelerator.replace(/Ctrl/gi, 'CommandOrControl').replace(/\s*\+\s*/g, '+')

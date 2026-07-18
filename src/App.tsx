@@ -144,6 +144,13 @@ function useCaptionPreference() {
   return enabled
 }
 
+function useBrightnessPreference() {
+  const read = () => { try { return JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').bright !== false } catch { return true } }
+  const [enabled, setEnabled] = useState(read)
+  useEffect(() => { const refresh = () => setEnabled(read()); window.addEventListener('hidegames-preferences', refresh); return () => window.removeEventListener('hidegames-preferences', refresh) }, [])
+  return enabled
+}
+
 function StatusCaptions({ messages, history }: { messages: ChatMessage[]; history: { name: string; away: boolean }[] }) {
   const latestRoom = history.at(-1)
   const latestMessage = messages.at(-1)
@@ -810,12 +817,13 @@ function GameResultTracker({ gameKey, gameName, state, playerId, members, record
 function App() {
   const [page,setPage]=useState<Page>('home'); const [selected,setSelected]=useState<GameKey>('tag'); const [showShortcut,setShowShortcut]=useState(false); const [youtubeUrl,setYoutubeUrl]=useState(() => localStorage.getItem('hidegames.youtube-url') ?? ''); const [brightness,setBrightness]=useState(() => Number(localStorage.getItem('hidegames.brightness') ?? 85)); const [shortcut,setShortcut]=useState(() => localStorage.getItem('hidegames.away-shortcut') ?? 'Ctrl + Shift + H'); const [openSpectatorGame,setOpenSpectatorGame]=useState(false); const [spectatorMessage,setSpectatorMessage]=useState(''); const room = useRoomSession(); const player = usePlayerData()
   const captionsEnabled = useCaptionPreference()
+  const brightnessEnabled = useBrightnessPreference()
   useInterfaceAudio(page==='play'&&!room.paused)
   useRoomStatusNotifications(room.awayHistory)
   useEffect(()=>{if(page==='play'&&room.members.length>1)player.recordRecentPlayers(room.members,room.localMember.id)},[page,room.roomCode,room.members,room.localMember.id,player.recordRecentPlayers])
   useEffect(()=>{localStorage.setItem('hidegames.youtube-url',youtubeUrl)},[youtubeUrl])
-  useEffect(()=>{localStorage.setItem('hidegames.brightness',String(brightness));window.hideGamesDesktop?.setBrightness(brightness)},[brightness])
-  useEffect(()=>{const offStarted=window.hideGamesDesktop?.onAwayStarted(()=>{room.setAway(true);setShowShortcut(false)});const offReturned=window.hideGamesDesktop?.onAwayReturned(()=>{room.setAway(false);setShowShortcut(false)});return()=>{offStarted?.();offReturned?.()}},[room])
+  useEffect(()=>{localStorage.setItem('hidegames.brightness',String(brightness))},[brightness])
+  useEffect(()=>{const offStarted=window.hideGamesDesktop?.onAwayStarted(()=>{if(brightnessEnabled)void window.hideGamesDesktop?.setBrightness(brightness);room.setAway(true);setShowShortcut(false)});const offReturned=window.hideGamesDesktop?.onAwayReturned(()=>{if(brightnessEnabled)void window.hideGamesDesktop?.setBrightness(brightness,true);room.setAway(false);setShowShortcut(false)});return()=>{offStarted?.();offReturned?.()}},[brightness,brightnessEnabled,room])
   useEffect(()=>{const offRoom=window.hideGamesDesktop?.onRoomLink(code=>{if(room.joinRoom(code)){setPage('room');setSelected(room.game as GameKey)}});return()=>offRoom?.()},[room])
   useEffect(()=>{const onShortcut=(e:KeyboardEvent)=>{if(window.hideGamesDesktop)return;const keys=shortcut.toLowerCase().replace(/\s/g,'').split('+');const key=keys.at(-1);const control=keys.includes('ctrl')||keys.includes('control')||keys.includes('commandorcontrol');const command=keys.includes('cmd')||keys.includes('command');const shift=keys.includes('shift');const alt=keys.includes('alt')||keys.includes('option');const primary=command?e.metaKey:control?(e.ctrlKey||e.metaKey):!e.ctrlKey&&!e.metaKey;if(key&&e.key.toLowerCase()===key&&e.shiftKey===shift&&e.altKey===alt&&primary){e.preventDefault();const away=Boolean(room.members.find(member=>member.id===room.localMember.id)?.away);room.setAway(!away);setShowShortcut(!away)}};window.addEventListener('keydown',onShortcut);return()=>window.removeEventListener('keydown',onShortcut)},[room,shortcut])
   useEffect(()=>{if(games.some(game=>game.key===room.game)) setSelected(room.game as GameKey)},[room.game])

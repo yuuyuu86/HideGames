@@ -2,7 +2,7 @@ interface Window {
   hideGamesDesktop?: {
     hideWindow: () => Promise<void>
     showWindow: () => Promise<void>
-    setBrightness: (value: number) => Promise<{ supported: boolean }>
+    setBrightness: (value: number, restore?: boolean) => Promise<{ supported: boolean }>
     setAwayShortcut: (accelerator: string) => Promise<{ ok: boolean; message?: string; accelerator?: string }>
     onAwayStarted: (callback: () => void) => () => void
     onAwayReturned: (callback: () => void) => () => void
