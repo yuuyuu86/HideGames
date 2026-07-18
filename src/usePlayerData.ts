@@ -4,6 +4,7 @@ export type ReplayRecord = { id: string; game: string; result: 'win' | 'loss' | 
 export type MatchRecord = { id: string; game: string; result: 'win' | 'loss' | 'draw'; playedAt: string; replayId?: string }
 export type RecentPlayer = { id: string; name: string; color: 'mint' | 'purple' | 'blue' | 'orange'; playedAt: string }
 export type AvatarTone = 'mint' | 'purple' | 'blue' | 'orange'
+export type BlockedPlayer = { id: string; name: string }
 export type PlayerData = {
   displayName: string
   title: string
@@ -15,6 +16,7 @@ export type PlayerData = {
   matches: MatchRecord[]
   replays: ReplayRecord[]
   recentPlayers: RecentPlayer[]
+  blockedPlayers: BlockedPlayer[]
 }
 
 const initial: PlayerData = {
@@ -24,6 +26,7 @@ const initial: PlayerData = {
   matches: [],
   replays: [],
   recentPlayers: [],
+  blockedPlayers: [],
 }
 
 const storageKey = () => `hidegames.player-data.${localStorage.getItem('hidegames.account-id') || 'guest'}`
@@ -98,8 +101,10 @@ export function usePlayerData() {
   const toggleFavourite = useCallback((game: string) => setData(current => ({ ...current, favourites: current.favourites.includes(game) ? current.favourites.filter(item => item !== game) : [...current.favourites, game] })), [])
   const updateAppearance = useCallback((title: string, avatarTone: AvatarTone) => setData(current => ({ ...current, title, avatarTone })), [])
   const recordRecentPlayers = useCallback((players: Array<{ id: string; name: string; color: RecentPlayer['color'] }>, ownId: string) => setData(current => {
-    const now=new Date().toISOString();const additions=players.filter(player=>player.id!==ownId).map(player=>({...player,playedAt:now}));const recentPlayers=[...additions,...(current.recentPlayers??[]).filter(player=>!additions.some(next=>next.id===player.id))].slice(0,12)
+    const now=new Date().toISOString();const blockedIds=new Set((current.blockedPlayers??[]).map(player=>player.id));const additions=players.filter(player=>player.id!==ownId&&!blockedIds.has(player.id)).map(player=>({...player,playedAt:now}));const recentPlayers=[...additions,...(current.recentPlayers??[]).filter(player=>!additions.some(next=>next.id===player.id)&&!blockedIds.has(player.id))].slice(0,12)
     return JSON.stringify(recentPlayers)===JSON.stringify(current.recentPlayers??[])?current:{...current,recentPlayers}
   }), [])
-  return { data, updateProfile, updateAppearance, recordMatch, toggleFavourite, recordRecentPlayers }
+  const blockPlayer = useCallback((player: { id: string; name: string }) => setData(current => ({ ...current, blockedPlayers: [...(current.blockedPlayers??[]).filter(item=>item.id!==player.id),player], recentPlayers:(current.recentPlayers??[]).filter(item=>item.id!==player.id) })), [])
+  const unblockPlayer = useCallback((id: string) => setData(current => ({ ...current, blockedPlayers:(current.blockedPlayers??[]).filter(player=>player.id!==id) })), [])
+  return { data, updateProfile, updateAppearance, recordMatch, toggleFavourite, recordRecentPlayers, blockPlayer, unblockPlayer }
 }
