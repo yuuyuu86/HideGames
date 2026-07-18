@@ -62,6 +62,7 @@ export function useRoomSession() {
   const [authRevision, setAuthRevision] = useState(0)
   const channel = useRef<BroadcastChannel | null>(null)
   const socket = useRef<Socket | null>(null)
+  const joinDetails = useRef({ roomCode, roomPassword })
   const signalHandlers = useRef(new Set<(signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void>())
   const localMember = useMemo(() => {
     const existing = sessionStorage.getItem('hidegames.member-id')
@@ -69,6 +70,7 @@ export function useRoomSession() {
     if (!existing) sessionStorage.setItem('hidegames.member-id', id)
     return { ...memberPalette[0], id }
   }, [])
+  joinDetails.current = { roomCode, roomPassword }
 
   const apply = useCallback((event: Event) => {
     if (event.type === 'chat') setMessages(current => current.some(message => message.id === event.message.id) ? current : [...current, event.message])
@@ -93,7 +95,7 @@ export function useRoomSession() {
     const url = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
     const client = io(url, { autoConnect: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 10_000, timeout: 5000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
     socket.current = client
-    client.on('connect', () => { setConnected(true); client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' }) })
+    client.on('connect', () => { const details = joinDetails.current; setConnected(true); client.emit('room:join', { code: details.roomCode, member: localMember, password: details.roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' }) })
     client.on('disconnect', () => setConnected(false))
     client.on('connect_error', () => setConnected(false))
     client.on('room:state', (next) => {
@@ -115,7 +117,12 @@ export function useRoomSession() {
     client.on('room:private', ({ game, state }) => { if (typeof game === 'string') setPrivateState(current => ({ ...current, [game]: state })) })
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
     return () => { client.close() }
-  }, [authRevision, localMember, roomCode, roomPassword])
+  }, [authRevision, localMember])
+
+  useEffect(() => {
+    if (!socket.current?.connected) return
+    socket.current.emit('room:join', { code: roomCode, member: localMember, password: roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' })
+  }, [localMember, roomCode, roomPassword])
 
   useEffect(() => { const refresh = () => setAuthRevision(value => value + 1); window.addEventListener('hidegames-auth', refresh); return () => window.removeEventListener('hidegames-auth', refresh) }, [])
 

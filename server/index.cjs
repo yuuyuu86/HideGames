@@ -167,6 +167,7 @@ const tagKeys = [{ x: 1, y: 1 }, { x: 10, y: 6 }]
 const tagExit = { x: 11, y: 1 }
 const tagWarps = [{ from: { x: 0, y: 7 }, to: { x: 11, y: 7 } }, { from: { x: 11, y: 7 }, to: { x: 0, y: 7 } }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
+const roomGames = new Set(['tag', 'othello', 'gomoku', 'connect4', 'shiritori', 'escape', 'future', 'werewolf', 'shogi', 'chess', 'go', 'daifugo', 'uno', 'oldmaid', 'memory', 'sevens', 'mahjong', 'sugoroku', 'mines', 'tetris', 'puzzle', 'wordwolf', 'quiz', 'drawrelay', 'association', 'delivery', 'newsroom', 'alien', 'museum', 'thief', 'orchestra', 'guard', 'sports', 'movie', 'meeting', 'election', 'story', 'letter', 'ghost', 'soundmaze', 'detective', 'court', 'bug'])
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
 const colorTurnGames = {
@@ -343,6 +344,12 @@ io.on('connection', socket => {
       ready: Boolean(member.ready),
     }
     if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
+    const room = await hydrateRoom(code)
+    if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
+    const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
+    if (spectator && existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
+    const existing = room.members.findIndex(item => item.id === member.id)
+    if (!spectator && existing < 0 && room.members.length >= 8) return socket.emit('room:error', { message: 'このルームは8人までです' })
     const previousCode = socket.data.roomCode
     const changingMembership = previousCode && (previousCode !== code || Boolean(socket.data.spectator) !== Boolean(spectator))
     if (changingMembership) {
@@ -363,19 +370,13 @@ io.on('connection', socket => {
       delete socket.data.spectator
       if (rooms.has(previousCode)) broadcastRoom(previousCode)
     }
-    const room = await hydrateRoom(code)
-    if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
     if (spectator) {
-      const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
-      if (existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
       socket.data.roomCode = code; socket.data.memberId = member.id; socket.data.spectator = true; socket.join(code)
       room.spectators ??= []
       if (existingSpectator >= 0) room.spectators[existingSpectator] = { ...room.spectators[existingSpectator], ...member, connected: true }
       else room.spectators.push({ ...member, connected: true })
       return broadcastRoom(code)
     }
-    const existing = room.members.findIndex(item => item.id === member.id)
-    if (existing < 0 && room.members.length >= 8) return socket.emit('room:error', { message: 'このルームは8人までです' })
     socket.data.roomCode = code
     socket.data.memberId = member.id
     socket.join(code)
@@ -405,7 +406,7 @@ io.on('connection', socket => {
     if (socket.data.spectator && event.type !== 'chat') return broadcastRoom(code)
     if (event.type === 'ready' && event.id === socket.data.memberId) room.members = room.members.map(member => member.id === event.id ? { ...member, ready: Boolean(event.ready) } : member)
     if (event.type === 'game') {
-      if (!isHost || typeof event.game !== 'string' || event.game.length > 40) return broadcastRoom(code)
+      if (!isHost || typeof event.game !== 'string' || !roomGames.has(event.game)) return broadcastRoom(code)
       room.game = event.game
       if (event.game === 'tag') {
         const state = tagState(room)
