@@ -157,6 +157,7 @@ export function useRoomSession() {
     },
     createRoom: () => {
       const code = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('')
+      sessionStorage.setItem('hidegames.spectator', 'false')
       localStorage.setItem('hidegames.room-code', code)
       setRoomCode(code)
       return code
