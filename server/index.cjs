@@ -119,6 +119,14 @@ function blankRoom() {
   return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], resume: { readyIds: [] }, access: { passwordHash: null } }
 }
 
+function normalizeHosts(room) {
+  room.members = room.members.map((member, index) => ({ ...member, host: index === 0 }))
+}
+
+function announceHostTransfer(room, member) {
+  room.messages = [...room.messages.slice(-99), { id: `host-${Date.now()}-${member.id}`, name: 'HideGames', tone: 'mint', text: `${member.name} さんが新しいホストになりました`, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) }]
+}
+
 function getRoom(code) {
   if (!rooms.has(code)) rooms.set(code, blankRoom())
   return rooms.get(code)
@@ -130,6 +138,7 @@ async function hydrateRoom(code) {
     const saved = await database.loadRoom(code)
     if (saved && typeof saved === 'object') {
       const room = { ...blankRoom(), ...saved, access: { passwordHash: saved.access?.passwordHash ?? null } }
+      normalizeHosts(room)
       rooms.set(code, room)
       return room
     }
@@ -170,6 +179,7 @@ io.on('connection', socket => {
     const existing = room.members.findIndex(item => item.id === member.id)
     if (existing >= 0) room.members[existing] = { ...room.members[existing], ...member }
     else room.members.push(member)
+    normalizeHosts(room)
     if (room.game === 'tag') {
       const state = tagState(room)
       if (!state.positions[member.id]) state.positions[member.id] = { x: 1 + (room.members.length % 3), y: 5 }
@@ -296,10 +306,15 @@ io.on('connection', socket => {
     const memberId = socket.data.memberId
     if (!code || !memberId) return
     const room = getRoom(code)
+    const wasHost = room.members[0]?.id === memberId
     room.members = room.members.filter(member => member.id !== memberId)
     room.resume = { readyIds: room.resume.readyIds.filter(id => id !== memberId) }
     if (room.members.length === 0) rooms.delete(code)
-    else broadcastRoom(code)
+    else {
+      normalizeHosts(room)
+      if (wasHost) announceHostTransfer(room, room.members[0])
+      broadcastRoom(code)
+    }
   })
 })
 
