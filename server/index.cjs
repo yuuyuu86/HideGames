@@ -8,6 +8,7 @@ const database = require('./db.cjs')
 
 const port = Number(process.env.PORT || 3001)
 const jwtSecret = process.env.AUTH_JWT_SECRET || null
+const youtubeApiKey = process.env.YOUTUBE_API_KEY || null
 const distDirectory = path.resolve(__dirname, '..', 'dist')
 const requestLimits = new Map()
 const sendJson = (response, status, body, headers = {}) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', ...headers }); response.end(JSON.stringify(body)) }
@@ -44,6 +45,23 @@ async function handleHttp(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {})
   if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret) })
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/api/youtube/search') {
+    if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' })
+    if (!youtubeApiKey) return sendJson(response, 503, { error: 'YouTube検索はまだ設定されていません' })
+    const query = url.searchParams.get('q')?.trim() ?? ''
+    if (!query || query.length > 120) return sendJson(response, 400, { error: '検索語は1〜120文字で入力してください' })
+    const retryAfter = rateLimit('youtube-search', clientKey(request), 20, 60_000)
+    if (retryAfter) return sendJson(response, 429, { error: '検索回数が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
+    try {
+      const endpoint = new URL('https://www.googleapis.com/youtube/v3/search')
+      endpoint.searchParams.set('part', 'snippet'); endpoint.searchParams.set('type', 'video'); endpoint.searchParams.set('maxResults', '12'); endpoint.searchParams.set('q', query); endpoint.searchParams.set('key', youtubeApiKey)
+      const result = await fetch(endpoint)
+      if (!result.ok) return sendJson(response, 502, { error: 'YouTube検索サービスに接続できませんでした' })
+      const payload = await result.json()
+      const items = Array.isArray(payload.items) ? payload.items.map(item => ({ id: item.id?.videoId, title: item.snippet?.title, channel: item.snippet?.channelTitle, thumbnail: item.snippet?.thumbnails?.medium?.url })).filter(item => typeof item.id === 'string' && typeof item.title === 'string') : []
+      return sendJson(response, 200, { items })
+    } catch { return sendJson(response, 502, { error: 'YouTube検索サービスに接続できませんでした' }) }
+  }
   if (url.pathname === '/api/matches' || url.pathname === '/api/rankings') {
     if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '記録サービスはまだ設定されていません' })
     try {
