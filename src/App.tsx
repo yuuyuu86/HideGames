@@ -124,12 +124,22 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
 }
 
 type VoiceSignal = { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }
-type VolumePreference = 'voice' | 'youtube'
+type VolumePreference = 'voice' | 'youtube' | 'bgm' | 'sfx'
 function useSavedVolume(key: VolumePreference) {
   const read = () => { try { const value=JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}')[key]; return typeof value==='number'?Math.max(0,Math.min(100,value)):80 } catch { return 80 } }
   const [volume,setVolume]=useState(read)
   useEffect(()=>{const refresh=()=>setVolume(read());window.addEventListener('hidegames-preferences',refresh);return()=>window.removeEventListener('hidegames-preferences',refresh)},[key])
   return volume
+}
+function useInterfaceAudio(active: boolean) {
+  const bgm=useSavedVolume('bgm');const sfx=useSavedVolume('sfx')
+  const context=useRef<AudioContext|null>(null);const gain=useRef<GainNode|null>(null);const oscillators=useRef<OscillatorNode[]>([]);const activeRef=useRef(active);const bgmRef=useRef(bgm);const sfxRef=useRef(sfx)
+  activeRef.current=active;bgmRef.current=bgm;sfxRef.current=sfx
+  const ensure=()=>{if(context.current)return context.current;const AudioContextClass=window.AudioContext??(window as typeof window&{webkitAudioContext?:typeof AudioContext}).webkitAudioContext;if(!AudioContextClass)return null;const next=new AudioContextClass();context.current=next;return next}
+  const startBgm=(audio:AudioContext)=>{if(gain.current)return;const output=audio.createGain();output.gain.value=0;output.connect(audio.destination);gain.current=output;oscillators.current=[196,246.94].map((frequency,index)=>{const oscillator=audio.createOscillator();oscillator.type=index?'triangle':'sine';oscillator.frequency.value=frequency;oscillator.detune.value=index?7:-7;oscillator.connect(output);oscillator.start();return oscillator});output.gain.linearRampToValueAtTime(Math.min(.06,bgmRef.current/1500),audio.currentTime+.35)}
+  useEffect(()=>{const onPointer=(event:PointerEvent)=>{const target=event.target as Element|null;if(!target?.closest('button:not(:disabled), [role="button"]'))return;const audio=ensure();if(!audio)return;void audio.resume();if(activeRef.current)startBgm(audio);const oscillator=audio.createOscillator();const output=audio.createGain();oscillator.type='sine';oscillator.frequency.setValueAtTime(620,audio.currentTime);oscillator.frequency.exponentialRampToValueAtTime(420,audio.currentTime+.07);output.gain.setValueAtTime(Math.max(.00001,Math.min(.13,sfxRef.current/500)),audio.currentTime);output.gain.exponentialRampToValueAtTime(.00001,audio.currentTime+.08);oscillator.connect(output);output.connect(audio.destination);oscillator.start();oscillator.stop(audio.currentTime+.085)};document.addEventListener('pointerdown',onPointer);return()=>document.removeEventListener('pointerdown',onPointer)},[])
+  useEffect(()=>{const audio=context.current;if(!audio)return;if(active){void audio.resume();startBgm(audio);gain.current?.gain.linearRampToValueAtTime(Math.min(.06,bgm/1500),audio.currentTime+.2)}else gain.current?.gain.linearRampToValueAtTime(0,audio.currentTime+.15)},[active,bgm])
+  useEffect(()=>()=>{oscillators.current.forEach(oscillator=>oscillator.stop());void context.current?.close()},[])
 }
 function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomMember[]; playerId: string; sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => void; onSignal: (handler: (signal: VoiceSignal) => void) => () => void }) {
   const [active, setActive] = useState(false)
@@ -745,6 +755,7 @@ function GameResultTracker({ gameKey, gameName, state, playerId, members, record
 
 function App() {
   const [page,setPage]=useState<Page>('home'); const [selected,setSelected]=useState<GameKey>('tag'); const [showShortcut,setShowShortcut]=useState(false); const [youtubeUrl,setYoutubeUrl]=useState(() => localStorage.getItem('hidegames.youtube-url') ?? ''); const [brightness,setBrightness]=useState(() => Number(localStorage.getItem('hidegames.brightness') ?? 85)); const [shortcut,setShortcut]=useState(() => localStorage.getItem('hidegames.away-shortcut') ?? 'Ctrl + Shift + H'); const room = useRoomSession(); const player = usePlayerData()
+  useInterfaceAudio(page==='play'&&!room.paused)
   useEffect(()=>{localStorage.setItem('hidegames.youtube-url',youtubeUrl)},[youtubeUrl])
   useEffect(()=>{localStorage.setItem('hidegames.brightness',String(brightness));window.hideGamesDesktop?.setBrightness(brightness)},[brightness])
   useEffect(()=>{const offStarted=window.hideGamesDesktop?.onAwayStarted(()=>{room.setAway(true);room.setPaused(true);setShowShortcut(false)});const offReturned=window.hideGamesDesktop?.onAwayReturned(()=>{room.setAway(false);room.setPaused(true);setShowShortcut(false)});return()=>{offStarted?.();offReturned?.()}},[room])
