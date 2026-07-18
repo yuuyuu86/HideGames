@@ -124,6 +124,13 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
 }
 
 type VoiceSignal = { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }
+type VolumePreference = 'voice' | 'youtube'
+function useSavedVolume(key: VolumePreference) {
+  const read = () => { try { const value=JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}')[key]; return typeof value==='number'?Math.max(0,Math.min(100,value)):80 } catch { return 80 } }
+  const [volume,setVolume]=useState(read)
+  useEffect(()=>{const refresh=()=>setVolume(read());window.addEventListener('hidegames-preferences',refresh);return()=>window.removeEventListener('hidegames-preferences',refresh)},[key])
+  return volume
+}
 function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomMember[]; playerId: string; sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => void; onSignal: (handler: (signal: VoiceSignal) => void) => () => void }) {
   const [active, setActive] = useState(false)
   const [muted, setMuted] = useState(false)
@@ -131,13 +138,14 @@ function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomM
   const stream = useRef<MediaStream | null>(null)
   const peers = useRef(new Map<string, RTCPeerConnection>())
   const audios = useRef(new Map<string, HTMLAudioElement>())
-  const close = () => { peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => audio.remove()); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
+  const volume=useSavedVolume('voice')
+  const close = () => { peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => { audio.pause();audio.remove() }); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
   const peer = (target: string) => {
     const existing = peers.current.get(target); if (existing) return existing
     const connection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
     stream.current?.getTracks().forEach(track => connection.addTrack(track, stream.current!))
     connection.onicecandidate = event => { if (event.candidate) sendSignal(target, event.candidate.toJSON()) }
-    connection.ontrack = event => { const audio = new Audio(); audio.autoplay = true; audio.srcObject = event.streams[0]; audios.current.set(target, audio); void audio.play().catch(() => undefined) }
+    connection.ontrack = event => { const audio = new Audio(); audio.autoplay = true; audio.volume=volume/100; audio.srcObject = event.streams[0]; audios.current.set(target, audio); void audio.play().catch(() => undefined) }
     peers.current.set(target, connection); return connection
   }
   useEffect(() => onSignal(async signal => {
@@ -149,6 +157,7 @@ function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomM
     } else if ('candidate' in signal.data) await connection.addIceCandidate(signal.data as RTCIceCandidateInit)
   }), [active, onSignal, playerId])
   useEffect(() => () => close(), [])
+  useEffect(()=>{audios.current.forEach(audio=>{audio.volume=volume/100})},[volume])
   const join = async () => {
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -786,6 +795,7 @@ function YoutubeScreenV2({ url, setUrl, sharedState, syncState }: { url: string;
   const [input, setInput] = useState(url)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
+  const volume=useSavedVolume('youtube')
   const shared = sharedState as { url?: string; playing?: boolean; position?: number; startedAt?: number } | undefined
   const activeUrl = shared?.url || url
   const embed = useMemo(() => { const id = activeUrl.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/)?.[1]; return id ? `https://www.youtube.com/embed/${id}?rel=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}` : '' }, [activeUrl])
@@ -793,9 +803,10 @@ function YoutubeScreenV2({ url, setUrl, sharedState, syncState }: { url: string;
   const requestPosition = () => command('getCurrentTime')
   useEffect(() => { const onMessage = (event: MessageEvent) => { if (typeof event.data !== 'string' || !event.data.includes('currentTime')) return; try { const data = JSON.parse(event.data); if (typeof data.info?.currentTime === 'number') setPosition(data.info.currentTime) } catch { /* YouTube以外のpostMessageは無視 */ } }; window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage) }, [])
   useEffect(() => { if (!shared) return; setInput(shared.url ?? '');setUrl(shared.url ?? '');setPlaying(Boolean(shared.playing));const nextPosition=(shared.position ?? 0)+(shared.playing&&shared.startedAt?(Date.now()-shared.startedAt)/1000:0);setPosition(nextPosition);command('seekTo',[nextPosition,true]);command(shared.playing?'playVideo':'pauseVideo') }, [sharedState])
+  useEffect(()=>{command('setVolume',[volume])},[embed,volume])
   const publish = (nextUrl=input,nextPlaying=playing,nextPosition=position) => { setUrl(nextUrl);setPlaying(nextPlaying);syncState({url:nextUrl,playing:nextPlaying,position:nextPosition,startedAt:Date.now()}) }
   useEffect(() => { if (!playing) return; const timer=window.setInterval(requestPosition,2000); return () => window.clearInterval(timer) }, [playing])
-  return <div className="page youtube-page"><header className="page-title"><div><p className="eyebrow">WATCH TOGETHER</p><h1>YouTubeを一緒に見る</h1><p>動画URL、再生状態、再生位置をルームで同期します。</p></div></header><div className="youtube-box panel">{embed?<iframe ref={frame} src={embed} title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen/>:<div className="video-empty"><Video size={40}/><h2>動画を再生しよう</h2><p>YouTubeの動画URLまたはプレイリストURLを貼り付けてください。</p></div>}<form onSubmit={event=>{event.preventDefault();publish(input,false,0)}}><input value={input} onChange={event=>setInput(event.target.value)} placeholder="https://www.youtube.com/watch?v=..."/><button className="primary">ルームに共有</button></form></div><div className="youtube-controls"><button className="primary" disabled={!embed} onClick={()=>{requestPosition();command('playVideo');publish(input,true,position)}}><Play size={16} fill="currentColor"/>全員で再生</button><button className="secondary" disabled={!embed} onClick={()=>{requestPosition();command('pauseVideo');publish(input,false,position)}}><Pause size={16}/>全員で停止</button><span>{playing ? `再生中 ${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2,'0')}` : '停止中'}</span></div><div className="sync-note"><Radio size={18}/><span><b>同期視聴</b><small>再生・停止の操作時に再生位置も共有します。自動再生はブラウザの音声ポリシーに従います。</small></span></div></div>
+  return <div className="page youtube-page"><header className="page-title"><div><p className="eyebrow">WATCH TOGETHER</p><h1>YouTubeを一緒に見る</h1><p>動画URL、再生状態、再生位置をルームで同期します。</p></div></header><div className="youtube-box panel">{embed?<iframe ref={frame} src={embed} title="YouTube player" onLoad={()=>command('setVolume',[volume])} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen/>:<div className="video-empty"><Video size={40}/><h2>動画を再生しよう</h2><p>YouTubeの動画URLまたはプレイリストURLを貼り付けてください。</p></div>}<form onSubmit={event=>{event.preventDefault();publish(input,false,0)}}><input value={input} onChange={event=>setInput(event.target.value)} placeholder="https://www.youtube.com/watch?v=..."/><button className="primary">ルームに共有</button></form></div><div className="youtube-controls"><button className="primary" disabled={!embed} onClick={()=>{requestPosition();command('playVideo');publish(input,true,position)}}><Play size={16} fill="currentColor"/>全員で再生</button><button className="secondary" disabled={!embed} onClick={()=>{requestPosition();command('pauseVideo');publish(input,false,position)}}><Pause size={16}/>全員で停止</button><span>{playing ? `再生中 ${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2,'0')}` : '停止中'} ・ 音量 {volume}%</span></div><div className="sync-note"><Radio size={18}/><span><b>同期視聴</b><small>再生・停止の操作時に再生位置も共有します。自動再生はブラウザの音声ポリシーに従います。</small></span></div></div>
 }
 function YoutubeScreen({ url, setUrl, sharedState, syncState }: { url: string; setUrl: (url: string) => void; sharedState: unknown; syncState: (state: unknown) => void }) {
   const frame = useRef<HTMLIFrameElement | null>(null)
