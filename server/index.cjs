@@ -46,7 +46,13 @@ function serveStatic(request, response) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const pathname = new URL(request.url, 'http://localhost').pathname
   const requested = path.resolve(distDirectory, `.${pathname === '/' ? '/index.html' : pathname}`)
-  const file = requested.startsWith(distDirectory) && fs.existsSync(requested) && fs.statSync(requested).isFile() ? requested : path.join(distDirectory, 'index.html')
+  const exists = requested.startsWith(distDirectory) && fs.existsSync(requested) && fs.statSync(requested).isFile()
+  if (!exists && pathname.startsWith('/assets/')) {
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' })
+    response.end('Asset not found')
+    return true
+  }
+  const file = exists ? requested : path.join(distDirectory, 'index.html')
   if (!fs.existsSync(file)) return false
   const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' }
   response.writeHead(200, { 'Content-Type': types[path.extname(file)] ?? 'application/octet-stream', 'Cache-Control': file.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable' })
