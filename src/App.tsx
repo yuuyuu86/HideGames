@@ -500,16 +500,42 @@ function MahjongGame({ paused, sharedState, syncState, members, playerId }: { pa
 }
 type Block = 0 | 1 | 2 | 3 | 4 | 5
 type FallingState = { board?: Block[][]; active?: { x: number; y: number; shape: number; rot: number }; turn?: string; score?: Record<string, number>; finished?: boolean }
+type TetrisPlayerState = { board: Block[][]; active: { x: number; y: number; shape: number; rot: number }; score: number; pendingGarbage: number; lost?: boolean; seed: number }
+type TetrisState = { players?: Record<string, TetrisPlayerState>; finished?: boolean }
 const tetrominoes = [[[1,1,1,1]], [[2,2],[2,2]], [[0,3,0],[3,3,3]], [[4,0],[4,0],[4,4]], [[0,5],[0,5],[5,5]]]
 const rotateShape = (shape: number[][], turns: number) => Array.from({ length: turns % 4 }, () => null).reduce(current => current[0].map((_, x) => current.map(row => row[x]).reverse()), shape)
 const emptyBoard = (w: number, h: number) => Array.from({ length: h }, () => Array<Block>(w).fill(0))
 const shapeCells = (active: NonNullable<FallingState['active']>) => rotateShape(tetrominoes[active.shape], active.rot).flatMap((row, y) => row.map((value, x) => value ? ({ x: active.x + x, y: active.y + y, value: value as Block }) : null).filter(Boolean) as { x: number; y: number; value: Block }[])
 function TetrisGame({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
-  const state = (sharedState as FallingState | undefined) ?? {}; const board = state.board ?? emptyBoard(10, 16); const active = state.active ?? { x: 3, y: 0, shape: 0, rot: 0 }; const turn = state.turn ?? members[0]?.id ?? playerId; const score = state.score ?? Object.fromEntries(members.map(member => [member.id, 0])); const canPlace = (piece: typeof active) => shapeCells(piece).every(cell => cell.x >= 0 && cell.x < 10 && cell.y >= 0 && cell.y < 16 && !board[cell.y][cell.x])
-  const move = (dx: number, rotation = 0) => { if (paused || turn !== playerId || state.finished) return; const next = { ...active, x: active.x + dx, rot: active.rot + rotation }; if (canPlace(next)) syncState({ ...state, board, active: next, turn, score }) }
-  const drop = () => { if (paused || turn !== playerId || state.finished) return; let landed = active; while (canPlace({ ...landed, y: landed.y + 1 })) landed = { ...landed, y: landed.y + 1 }; const nextBoard = board.map(row => [...row]); shapeCells(landed).forEach(cell => { if (cell.y >= 0) nextBoard[cell.y][cell.x] = cell.value }); const kept = nextBoard.filter(row => row.some(cell => !cell)); const cleared = 16 - kept.length; while (kept.length < 16) kept.unshift(Array<Block>(10).fill(0)); const nextTurn = members[(members.findIndex(member => member.id === turn) + 1) % members.length]?.id ?? playerId; const nextScore = { ...score, [playerId]: (score[playerId] ?? 0) + cleared }; const nextActive = { x: 3, y: 0, shape: ((active.shape + 1 + cleared) % tetrominoes.length), rot: 0 }; syncState({ board: kept, active: nextActive, turn: nextTurn, score: nextScore, finished: !canPlace(nextActive) }) }
-  const activeCells = new Map(shapeCells(active).map(cell => [`${cell.x}:${cell.y}`, cell.value]))
-  return <div className="board-game falling-game"><div className="game-top"><div><span className="tag">VERSUS / TETRIS LITE</span><h1>テトリス風対戦</h1></div><div className="turn-pill">{state.finished ? 'ゲーム終了' : `${members.find(m => m.id === turn)?.name ?? 'あなた'} の番`}</div></div><section className="falling-layout"><div className="falling-board tetris-board">{board.flatMap((row, y) => row.map((value, x) => <i key={`${x}-${y}`} className={`block c${activeCells.get(`${x}:${y}`) ?? value}`} />))}</div><section className="falling-side panel"><h2>操作</h2><p>1手ごとにブロックを落とし、横一列を消すと得点です。</p><div className="falling-controls"><button disabled={paused || turn !== playerId} onClick={() => move(-1)}>左</button><button disabled={paused || turn !== playerId} onClick={() => move(0, 1)}>回転</button><button disabled={paused || turn !== playerId} onClick={() => move(1)}>右</button><button className="primary" disabled={paused || turn !== playerId} onClick={drop}>落とす</button></div><div className="falling-score">{members.map(member => <div key={member.id}><span>{member.name}</span><b>{score[member.id] ?? 0} LINE</b></div>)}</div></section></section></div>
+  const state=(sharedState as TetrisState|undefined)??{}
+  const blank=(seed:number):TetrisPlayerState=>({board:emptyBoard(10,16),active:{x:3,y:0,shape:seed%tetrominoes.length,rot:0},score:0,pendingGarbage:0,seed})
+  const players=state.players??{}
+  const me=players[playerId]
+  const start=()=>{if(members[0]?.id!==playerId||paused)return;syncState({players:Object.fromEntries(members.map((member,index)=>[member.id,blank(index)])),finished:false})}
+  const canPlace=(board:Block[][],piece:TetrisPlayerState['active'])=>shapeCells(piece).every(cell=>cell.x>=0&&cell.x<10&&cell.y>=0&&cell.y<16&&!board[cell.y][cell.x])
+  const publish=(nextMe:TetrisPlayerState, attack=0)=>{
+    const nextPlayers={...players,[playerId]:nextMe}
+    if(attack){const target=members.find(member=>member.id!==playerId&&!players[member.id]?.lost);if(target&&nextPlayers[target.id])nextPlayers[target.id]={...nextPlayers[target.id],pendingGarbage:Math.min(20,nextPlayers[target.id].pendingGarbage+attack)}}
+    const survivors=Object.values(nextPlayers).filter(player=>!player.lost)
+    syncState({players:nextPlayers,finished:survivors.length<=1})
+  }
+  const lock=(hardDrop=false)=>{
+    if(!me||paused||state.finished||me.lost)return
+    let landed=me.active
+    if(hardDrop)while(canPlace(me.board,{...landed,y:landed.y+1}))landed={...landed,y:landed.y+1}
+    else if(canPlace(me.board,{...landed,y:landed.y+1})){publish({...me,active:{...landed,y:landed.y+1}});return}
+    const settled=me.board.map(row=>[...row]);shapeCells(landed).forEach(cell=>{if(cell.y>=0)settled[cell.y][cell.x]=cell.value})
+    const kept=settled.filter(row=>row.some(cell=>!cell));const cleared=16-kept.length;while(kept.length<16)kept.unshift(Array<Block>(10).fill(0))
+    const garbage=Math.min(me.pendingGarbage,4);const overflow=garbage>0&&kept.slice(0,garbage).some(row=>row.some(Boolean));const raised=garbage?[...kept.slice(garbage),...Array.from({length:garbage},(_,index)=>Array.from({length:10},(_,x)=>x===((me.seed+index*3)%10)?0:6 as Block))]:kept
+    const nextActive={x:3,y:0,shape:(me.seed+1)%tetrominoes.length,rot:0};const nextMe={board:raised,active:nextActive,score:me.score+cleared,pendingGarbage:0,seed:me.seed+1,lost:overflow||!canPlace(raised,nextActive)}
+    publish(nextMe,Math.max(0,cleared-1))
+  }
+  const move=(dx:number,rotation=0)=>{if(!me||paused||state.finished||me.lost)return;const next={...me.active,x:me.active.x+dx,rot:me.active.rot+rotation};if(canPlace(me.board,next))publish({...me,active:next})}
+  useEffect(()=>{if(!me||paused||state.finished||me.lost)return;const timer=window.setInterval(()=>lock(),850);return()=>window.clearInterval(timer)},[me,paused,state.finished])
+  if(!me)return <div className="board-game falling-game"><section className="mahjong-start panel"><h2>同時対戦を開始</h2><p>各自のブロックが自動で落下します。2ライン以上を消すと相手の盤面におじゃま行を送れます。</p><button className="primary" disabled={paused||members[0]?.id!==playerId} onClick={start}>{members[0]?.id===playerId?'対戦を開始':'ホストが対戦を開始します'}</button></section></div>
+  const activeCells=new Map(shapeCells(me.active).map(cell=>[`${cell.x}:${cell.y}`,cell.value]))
+  const winner=members.find(member=>players[member.id]&&!players[member.id].lost)
+  return <div className="board-game falling-game"><div className="game-top"><div><span className="tag">VERSUS / LIVE TETRIS</span><h1>テトリス風対戦</h1></div><div className="turn-pill">{state.finished?`${winner?.name??'勝者'} の勝利`:me.lost?'ゲームオーバー':'同時対戦中'}</div></div><section className="falling-layout"><div className="falling-board tetris-board">{me.board.flatMap((row,y)=>row.map((value,x)=><i key={`${x}-${y}`} className={`block c${activeCells.get(`${x}:${y}`)??value}`}/>))}</div><section className="falling-side panel"><h2>操作</h2><p>ブロックは自動で落下します。2ライン以上を消すと相手へおじゃま行を送ります。</p><div className="falling-controls"><button disabled={paused||state.finished||me.lost} onClick={()=>move(-1)}>左</button><button disabled={paused||state.finished||me.lost} onClick={()=>move(0,1)}>回転</button><button disabled={paused||state.finished||me.lost} onClick={()=>move(1)}>右</button><button className="primary" disabled={paused||state.finished||me.lost} onClick={()=>lock(true)}>一気に落とす</button></div><div className="falling-score">{members.map(member=>{const player=players[member.id];return <div key={member.id}><span>{member.name}{member.id===playerId?' (あなた)':''}</span><b>{player?.lost?'OUT':`${player?.score??0} LINE`}{player?.pendingGarbage?` +${player.pendingGarbage}`:''}</b></div>})}</div></section></section></div>
 }
 function PuzzleGame({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
   const state = (sharedState as FallingState | undefined) ?? {}; const board = state.board ?? emptyBoard(6, 12); const active = state.active ?? { x: 2, y: 0, shape: 2, rot: 0 }; const turn = state.turn ?? members[0]?.id ?? playerId; const score = state.score ?? Object.fromEntries(members.map(member => [member.id, 0])); const canPlace = (piece: typeof active) => shapeCells(piece).every(cell => cell.x >= 0 && cell.x < 6 && cell.y >= 0 && cell.y < 12 && !board[cell.y][cell.x])
