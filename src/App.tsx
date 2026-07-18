@@ -508,6 +508,7 @@ function TagGame({ paused, sharedState, moveTag, rematch, setMode, onFinished, p
   useEffect(() => {
     const move = (e: KeyboardEvent) => {
       if (paused || winner) return
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]')) return
       const k = e.key.toLowerCase()
       const dx = k === 'arrowright' || k === 'd' ? 1 : k === 'arrowleft' || k === 'a' ? -1 : 0
       const dy = k === 'arrowdown' || k === 's' ? 1 : k === 'arrowup' || k === 'w' ? -1 : 0
