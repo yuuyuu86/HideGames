@@ -155,16 +155,19 @@ const colorTurnGames = {
 function isMahjongCall(room, previous, nextState, senderId) {
   const discard = previous.lastDiscard
   const call = nextState.calledMeld
-  if (!discard?.owner || discard.owner === senderId || !call || !['pon', 'chi'].includes(call.kind)) return false
+  if (!discard?.owner || discard.owner === senderId || !call || !['pon', 'chi', 'kan'].includes(call.kind)) return false
   if (nextState.turn !== senderId || (nextState.melds?.[senderId]?.length ?? 0) !== (previous.melds?.[senderId]?.length ?? 0) + 1) return false
   const beforeHand = previous.hands?.[senderId] ?? []
   const afterHand = nextState.hands?.[senderId] ?? []
-  if (afterHand.length !== beforeHand.length - 2) return false
+  const tilesUsed = call.kind === 'kan' ? 3 : 2
+  if (afterHand.length !== beforeHand.length - tilesUsed) return false
   const meld = nextState.melds?.[senderId]?.at(-1)
-  if (!Array.isArray(meld) || meld.length !== 3) return false
+  if (!Array.isArray(meld) || meld.length !== tilesUsed + 1) return false
   const keys = meld.map(tile => `${tile?.suit}${tile?.rank}`)
   const discardKey = `${discard.tile?.suit}${discard.tile?.rank}`
-  if (keys.filter(key => key === discardKey).length !== 1) return false
+  const matchingDiscardTiles = keys.filter(key => key === discardKey).length
+  if (call.kind === 'kan') return matchingDiscardTiles === 4
+  if (matchingDiscardTiles !== 1) return false
   if (call.kind === 'pon') return keys.every(key => key === discardKey)
   const ownerIndex = room.members.findIndex(member => member.id === discard.owner)
   if (room.members[(ownerIndex + 1) % room.members.length]?.id !== senderId) return false
