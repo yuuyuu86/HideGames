@@ -33,7 +33,28 @@ ipcMain.handle('show-window', showWindow)
 // Native brightness control differs across operating systems and external displays.
 // Keep the explicit raise/restore protocol so a supported adapter can preserve the
 // original level without changing the away-state contract in the renderer.
-async function setExternalBrightness(value, restore = false) {
+async function setDisplayBrightness(value, restore = false) {
+  if (process.platform === 'win32') {
+    try {
+      if (restore) {
+        if (brightnessBeforeAway === null) return { supported: true }
+        await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,${brightnessBeforeAway})`])
+        brightnessBeforeAway = null
+        return { supported: true }
+      }
+      if (brightnessBeforeAway === null) {
+        const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$ErrorActionPreference = 'Stop'; (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"])
+        const current = Number([...stdout.matchAll(/\d+/g)].map(match => Number(match[0])).at(-1))
+        if (!Number.isFinite(current)) return { supported: false, message: '現在の明るさを取得できませんでした' }
+        brightnessBeforeAway = current
+      }
+      const next = Math.max(1, Math.min(100, Math.round(Number(value))))
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; (Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,${next})`])
+      return { supported: true }
+    } catch {
+      return { supported: false, message: 'このWindowsディスプレイはWMIの明るさ制御に対応していません' }
+    }
+  }
   if (process.platform !== 'darwin') return { supported: false, message: 'このOSの物理ディスプレイ制御には未対応です' }
   try {
     if (restore) {
@@ -57,7 +78,7 @@ async function setExternalBrightness(value, restore = false) {
     return { supported: false, message: 'このディスプレイはDDC/CIの明るさ制御に対応していません' }
   }
 }
-ipcMain.handle('set-window-brightness', (_event, value, restore = false) => setExternalBrightness(value, restore))
+ipcMain.handle('set-window-brightness', (_event, value, restore = false) => setDisplayBrightness(value, restore))
 ipcMain.handle('set-away-shortcut', (_event, accelerator) => {
   if (typeof accelerator !== 'string' || !accelerator.trim()) return { ok: false, message: 'キーを入力してください' }
   const next = accelerator.replace(/Ctrl/gi, 'CommandOrControl').replace(/\s*\+\s*/g, '+')
