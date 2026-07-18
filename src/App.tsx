@@ -718,7 +718,8 @@ function RoomScreen({ start, selected, members, localMemberId, roomCode, onJoinR
   const local = members.find(member => member.id === localMemberId)
   const reconnecting = members.filter(member => member.connected === false)
   const minimumPlayers = Number(/^\d+/.exec(selected.players)?.[0] ?? 1)
-  const canStart = members.length >= minimumPlayers && members.every(member => member.ready && member.connected !== false)
+  const host = Boolean(local?.host)
+  const canStart = host && members.length >= minimumPlayers && members.every(member => member.ready && member.connected !== false)
   const modeTitle = selected.key === 'tag' ? '宝石回収' : selected.kind
   const modeDescription = selected.key === 'tag' ? '宝石を4つ集めて出口を目指そう。鬼はそれを阻止！' : selected.description
   return <div className="page room-page">
