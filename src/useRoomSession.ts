@@ -30,7 +30,7 @@ type Event =
   | { type: 'away'; id: string; away: boolean }
   | { type: 'resume-ready'; id: string; ready: boolean }
   | { type: 'game-state'; game: string; state: unknown }
-  | { type: 'tag-mode'; mode: 'gems' | 'escape' | 'classic' | 'infection' }
+  | { type: 'tag-mode'; mode: 'gems' | 'escape' | 'classic' | 'infection' | 'transform' | 'team' }
 
 const memberPalette: RoomMember[] = [
   { id: 'yuta', name: 'yuta', color: 'mint', ready: true, host: true },
@@ -177,7 +177,7 @@ export function useRoomSession() {
       if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-rematch' })
       else publish({ type: 'game-state', game: 'tag', state: { positions: {}, collected: [] } })
     },
-    setTagMode: (mode: 'gems' | 'escape' | 'classic' | 'infection') => {
+    setTagMode: (mode: 'gems' | 'escape' | 'classic' | 'infection' | 'transform' | 'team') => {
       if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-mode', mode })
       else publish({ type: 'tag-mode', mode })
     },
