@@ -38,6 +38,20 @@ try {
   const rinshanWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', rinshan: true, haitei: true })
   assert(haiteiWin?.yaku.includes('海底摸月') && houteiWin?.yaku.includes('河底撈魚') && rinshanWin?.yaku.includes('嶺上開花') && !rinshanWin.yaku.includes('海底摸月'), '海底・河底・嶺上開花の判定が正しくありません')
 
+  const specialWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'ron', riichi: true, doubleRiichi: true, chankan: true, winningTile: tile('s5') })
+  assert(specialWin?.yaku.includes('ダブルリーチ') && specialWin.yaku.includes('槍槓') && !specialWin.yaku.includes('リーチ'), 'ダブルリーチ・槍槓の判定が正しくありません')
+
+  const doraHand = ['m1', 'm2', 'm3', 'm1', 'm2', 'm3', 'p1', 'p2', 'p3', 'p1', 'p2', 'p3', 's5', 's5'].map(tile)
+  const doraWin = evaluateMahjongWin(doraHand, [], { winType: 'tsumo', riichi: true, doraIndicators: [tile('m1')], uraDoraIndicators: [tile('p1')] })
+  assert(doraWin?.yaku.includes('ドラ 2') && doraWin.yaku.includes('裏ドラ 2'), 'ドラ・裏ドラの判定が正しくありません')
+
+  const tenhouWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', tenhou: true })
+  const chiihouWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', chiihou: true })
+  assert(tenhouWin?.yaku.includes('天和') && tenhouWin.yakuman === 1 && chiihouWin?.yaku.includes('地和') && chiihouWin.yakuman === 1, '天和・地和の判定が正しくありません')
+
+  const yakumanWithoutDora = evaluateMahjongWin(['z1', 'z1', 'z1', 'z2', 'z2', 'z2', 'z3', 'z3', 'z3', 'z4', 'z4', 'z4', 'm5', 'm5'].map(tile), [], { winType: 'tsumo', doraIndicators: [tile('z4')] })
+  assert(yakumanWithoutDora?.yakuman === 3 && !yakumanWithoutDora.yaku.some(name => name.startsWith('ドラ ')), '役満にドラが加算されています')
+
   console.log('Mahjong scoring tests passed')
 } finally {
   fs.rmSync(outputDirectory, { recursive: true, force: true })

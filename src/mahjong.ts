@@ -5,14 +5,19 @@ export type MahjongWinInfo = { yaku: string[]; han: number; fu: number; points: 
 export type MahjongWinOptions = {
   winType: MahjongWinType
   riichi?: boolean
+  doubleRiichi?: boolean
   ippatsu?: boolean
   rinshan?: boolean
   haitei?: boolean
   houtei?: boolean
+  chankan?: boolean
+  tenhou?: boolean
+  chiihou?: boolean
   winningTile?: MahjongTile
   seatWind?: 1 | 2 | 3 | 4
   roundWind?: 1 | 2 | 3 | 4
   doraIndicators?: MahjongTile[]
+  uraDoraIndicators?: MahjongTile[]
   meldOpen?: boolean[]
 }
 
@@ -155,11 +160,14 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
     const add = (name: string, value: number) => { yaku.push(name); han += value }
     let yakumanCount = 0
     const yakuman = (name: string, multiplier = 1) => { yaku.push(name); yakumanCount += multiplier; han = Math.max(han, 13 * yakumanCount) }
-    if (options.riichi && closed) add('リーチ', 1)
+    if (options.tenhou) yakuman('天和')
+    if (options.chiihou) yakuman('地和')
+    if (options.riichi && closed) add(options.doubleRiichi ? 'ダブルリーチ' : 'リーチ', options.doubleRiichi ? 2 : 1)
     if (options.riichi && options.ippatsu && closed) add('一発', 1)
     if (options.rinshan) add('嶺上開花', 1)
     else if (options.haitei) add('海底摸月', 1)
     else if (options.houtei) add('河底撈魚', 1)
+    else if (options.chankan) add('槍槓', 1)
     if (options.winType === 'tsumo' && closed) add('門前清自摸和', 1)
     if (sevenPairs) add('七対子', 2)
     if (all.every(isSimple)) add('断么九', 1)
@@ -234,7 +242,9 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
     }
     if (!yaku.length) return null
     const dora = (options.doraIndicators ?? []).map(doraForIndicator).reduce((total, doraTile) => total + all.filter(tile => sameTile(tile, doraTile)).length, 0)
-    if (dora) add(`ドラ ${dora}`, dora)
+    const uraDora = options.riichi ? (options.uraDoraIndicators ?? []).map(doraForIndicator).reduce((total, doraTile) => total + all.filter(tile => sameTile(tile, doraTile)).length, 0) : 0
+    if (!yakumanCount && dora) add(`ドラ ${dora}`, dora)
+    if (!yakumanCount && uraDora) add(`裏ドラ ${uraDora}`, uraDora)
     const fu = calculateFu(groups, options, sevenPairs)
     const points = pointInfo(han, fu, yakumanCount)
     return { yaku, han, fu, ...points, ...(yakumanCount ? { yakuman: yakumanCount } : {}) }
