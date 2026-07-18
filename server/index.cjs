@@ -145,6 +145,9 @@ const reports = []
 const disconnectTimers = new Map()
 const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
 const tagGems = [{ x: 3, y: 1 }, { x: 8, y: 2 }, { x: 6, y: 6 }, { x: 10, y: 4 }]
+const tagKeys = [{ x: 1, y: 1 }, { x: 10, y: 6 }]
+const tagExit = { x: 11, y: 1 }
+const tagWarps = [{ from: { x: 0, y: 7 }, to: { x: 11, y: 7 } }, { from: { x: 11, y: 7 }, to: { x: 0, y: 7 } }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
@@ -278,8 +281,9 @@ function broadcastRoom(code) {
 
 function tagState(room) {
   if (!room.gameState.tag) {
-    room.gameState.tag = { positions: {}, collected: [], hunterId: room.members[0]?.id ?? null, winner: null }
+    room.gameState.tag = { positions: {}, collected: [], keys: [], hunterId: room.members[0]?.id ?? null, winner: null }
   }
+  if (!Array.isArray(room.gameState.tag.keys)) room.gameState.tag.keys = []
   return room.gameState.tag
 }
 
@@ -389,20 +393,24 @@ io.on('connection', socket => {
       const state = tagState(room)
       const point = event.position
       if (!state.winner && point && Number.isInteger(point.x) && Number.isInteger(point.y) && point.x >= 0 && point.x < 12 && point.y >= 0 && point.y < 8 && !tagWall(point.x, point.y)) {
-        state.positions[socket.data.memberId] = point
-        const gemIndex = tagGems.findIndex((gem, index) => !state.collected.includes(index) && gem.x === point.x && gem.y === point.y)
+        const warp = tagWarps.find(item => item.from.x === point.x && item.from.y === point.y)
+        state.positions[socket.data.memberId] = warp ? warp.to : point
+        const currentPoint = state.positions[socket.data.memberId]
+        const gemIndex = tagGems.findIndex((gem, index) => !state.collected.includes(index) && gem.x === currentPoint.x && gem.y === currentPoint.y)
         if (gemIndex >= 0) state.collected.push(gemIndex)
+        const keyIndex = tagKeys.findIndex((key, index) => !state.keys.includes(index) && key.x === currentPoint.x && key.y === currentPoint.y)
+        if (keyIndex >= 0) state.keys.push(keyIndex)
         const hunterPoint = state.positions[state.hunterId]
         const caught = room.members.find(member => member.id !== state.hunterId && state.positions[member.id] && hunterPoint && state.positions[member.id].x === hunterPoint.x && state.positions[member.id].y === hunterPoint.y)
         if (caught) state.winner = state.hunterId
-        if (state.collected.length === tagGems.length) state.winner = 'runners'
+        if (state.collected.length === tagGems.length || (state.keys.length === tagKeys.length && currentPoint.x === tagExit.x && currentPoint.y === tagExit.y)) state.winner = 'runners'
       }
     }
     if (event.type === 'tag-rematch') {
       const previous = tagState(room).hunterId
       const index = Math.max(0, room.members.findIndex(member => member.id === previous))
       const hunter = room.members.length ? room.members[(index + 1) % room.members.length].id : null
-      room.gameState.tag = { positions: Object.fromEntries(room.members.map((member, memberIndex) => [member.id, { x: 1 + (memberIndex % 3), y: 5 }])), collected: [], hunterId: hunter, winner: null }
+      room.gameState.tag = { positions: Object.fromEntries(room.members.map((member, memberIndex) => [member.id, { x: 1 + (memberIndex % 3), y: 5 }])), collected: [], keys: [], hunterId: hunter, winner: null }
     }
     broadcastRoom(code)
   })

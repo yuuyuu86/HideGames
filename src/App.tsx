@@ -4,7 +4,7 @@ import {
   Home, MessageCircle, MonitorDown, Pause, Play, Plus, Radio, Search,
   Mic, MicOff, Settings, Shield, Sparkles, Swords, Users, Video, X,
 } from 'lucide-react'
-import { FaChessBoard, FaDoorOpen, FaGem, FaMoon, FaPaperPlane, FaPersonRunning, FaRegCircle, FaRegStar, FaUserSecret } from 'react-icons/fa6'
+import { FaChessBoard, FaDoorOpen, FaGem, FaKey, FaMoon, FaPaperPlane, FaPersonRunning, FaRegCircle, FaRegStar, FaUserSecret } from 'react-icons/fa6'
 import { useRoomSession, type RoomMember } from './useRoomSession'
 import { usePlayerData, type PlayerData } from './usePlayerData'
 import QRCode from 'qrcode'
@@ -411,12 +411,14 @@ function ChessGame({ paused, sharedState, syncState, members, playerId }: { paus
 
 function TagGame({ paused, sharedState, moveTag, rematch, onFinished, playerId, members }: { paused: boolean; sharedState: unknown; moveTag: (position: { x: number; y: number }) => void; rematch: () => void; onFinished: (result: 'win' | 'loss') => void; playerId: string; members: RoomMember[] }) {
   const gems=[{x:3,y:1},{x:8,y:2},{x:6,y:6},{x:10,y:4}]
+  const keys=[{x:1,y:1},{x:10,y:6}];const exit={x:11,y:1};const warps=[{x:0,y:7},{x:11,y:7}]
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
   const [collected, setCollected] = useState<number[]>([])
+  const [keysCollected, setKeysCollected] = useState<number[]>([])
   const [hunterId, setHunterId] = useState<string | null>(null)
   const [winner, setWinner] = useState<string | null>(null)
   const recorded = useRef(false)
-  useEffect(() => { const state = sharedState as { positions?: Record<string, { x: number; y: number }>; collected?: number[]; hunterId?: string | null; winner?: string | null } | undefined; if (state?.positions) setPositions(state.positions); if (state?.collected) setCollected(state.collected); if (state?.hunterId !== undefined) setHunterId(state.hunterId); if (state?.winner !== undefined) setWinner(state.winner) }, [sharedState])
+  useEffect(() => { const state = sharedState as { positions?: Record<string, { x: number; y: number }>; collected?: number[]; keys?: number[]; hunterId?: string | null; winner?: string | null } | undefined; if (state?.positions) setPositions(state.positions); if (state?.collected) setCollected(state.collected); if (state?.keys) setKeysCollected(state.keys); if (state?.hunterId !== undefined) setHunterId(state.hunterId); if (state?.winner !== undefined) setWinner(state.winner) }, [sharedState])
   const pos = positions[playerId] ?? { x: 1, y: 5 }
   useEffect(() => {
     const move = (e: KeyboardEvent) => {
@@ -436,7 +438,7 @@ function TagGame({ paused, sharedState, moveTag, rematch, onFinished, playerId, 
   const hunterName = members.find(member => member.id === hunterId)?.name ?? '鬼'
   const winnerText = winner === 'runners' ? '逃げる側の勝ちです' : winner ? `${members.find(member => member.id === winner)?.name ?? '鬼'} の勝ちです` : null
   useEffect(() => { if (!winner) { recorded.current = false; return } if (!recorded.current) { recorded.current = true; onFinished(winner === 'runners' || winner === playerId ? 'win' : 'loss') } }, [winner, playerId, onFinished])
-  return <div className="board-game tag-game"><div className="game-top"><div><span className="tag">アクション / 宝石回収</span><h1>オンライン鬼ごっこ</h1></div><div className="turn-pill">鬼: <b>{hunterName}</b><span className="gem-count"><FaGem /> {collected.length} / {gems.length}</span></div></div><p className="game-hint">WASD または矢印キーで移動。鬼に重なると鬼の勝ち、宝石をすべて集めると逃げる側の勝ちです。</p>{winnerText && <div className="tag-result">{winnerText}<button className="secondary" onClick={rematch}>再戦する</button></div>}<div className="tag-map">{Array.from({length:96},(_,i)=>{const x=i%12,y=Math.floor(i/12);const self=pos.x===x&&pos.y===y;const other=Object.entries(positions).find(([id, point])=>id!==playerId&&point.x===x&&point.y===y);const gemIndex=gems.findIndex(gem=>gem.x===x&&gem.y===y);const gem=gemIndex>=0&&!collected.includes(gemIndex);const wall=(x===4&&y>1&&y<6)||(y===3&&x>6&&x<10);return <span key={i} className={wall?'wall':''}>{self?<FaPersonRunning />:other?<span className="remote-player" title={members.find(member=>member.id===other[0])?.name}><FaUserSecret /></span>:gem?<FaGem />:null}</span>})}</div></div>
+  return <div className="board-game tag-game"><div className="game-top"><div><span className="tag">ACTION / ESCAPE TAG</span><h1>オンライン鬼ごっこ</h1></div><div className="turn-pill">鬼: <b>{hunterName}</b><span className="gem-count"><FaGem /> {collected.length} / {gems.length}</span><span className="gem-count"><FaKey /> {keysCollected.length} / {keys.length}</span></div></div><p className="game-hint">WASD または矢印キーで移動。宝石を全て回収するか、鍵を集めて出口へ到達すると逃げる側の勝ちです。ワープ床で反対側へ移動できます。</p>{winnerText && <div className="tag-result">{winnerText}<button className="secondary" onClick={rematch}>再戦する</button></div>}<div className="tag-map">{Array.from({length:96},(_,i)=>{const x=i%12,y=Math.floor(i/12);const self=pos.x===x&&pos.y===y;const other=Object.entries(positions).find(([id, point])=>id!==playerId&&point.x===x&&point.y===y);const gemIndex=gems.findIndex(gem=>gem.x===x&&gem.y===y);const keyIndex=keys.findIndex(key=>key.x===x&&key.y===y);const gem=gemIndex>=0&&!collected.includes(gemIndex);const key=keyIndex>=0&&!keysCollected.includes(keyIndex);const wall=(x===4&&y>1&&y<6)||(y===3&&x>6&&x<10);const warp=warps.some(point=>point.x===x&&point.y===y);const isExit=exit.x===x&&exit.y===y;return <span key={i} className={wall?'wall':''}>{self?<FaPersonRunning />:other?<span className="remote-player" title={members.find(member=>member.id===other[0])?.name}><FaUserSecret /></span>:gem?<FaGem />:key?<FaKey />:isExit?<FaDoorOpen />:warp?<FaMoon />:null}</span>})}</div></div>
 }
 
 function EscapeRoomGame({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
