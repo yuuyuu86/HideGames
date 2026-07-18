@@ -285,7 +285,7 @@ function hasOnlySafeExternalLinks(state) {
 }
 
 function blankRoom() {
-  return { members: [], spectators: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null } }
+  return { members: [], spectators: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null, inviteOnly: false } }
 }
 
 function gameRoundFinished(room) {
@@ -323,7 +323,7 @@ async function hydrateRoom(code) {
     try {
       const saved = await database.loadRoom(code)
       if (saved && typeof saved === 'object') {
-        const room = { ...blankRoom(), ...saved, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null } }
+        const room = { ...blankRoom(), ...saved, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null, inviteOnly: Boolean(saved.access?.inviteOnly) } }
         normalizeHosts(room)
         rooms.set(code, room)
         return room
@@ -341,7 +341,7 @@ async function hydrateRoom(code) {
 
 function broadcastRoom(code) {
   const room = getRoom(code)
-  io.to(code).emit('room:state', { ...room, access: { locked: Boolean(room.access?.passwordHash) } })
+  io.to(code).emit('room:state', { ...room, access: { locked: Boolean(room.access?.passwordHash), inviteOnly: Boolean(room.access?.inviteOnly) } })
   const snapshot = JSON.parse(JSON.stringify(database.serializeRoom(room)))
   const previous = roomSaves.get(code) ?? Promise.resolve()
   const save = previous.catch(() => undefined).then(() => database.saveRoom(code, snapshot))
@@ -401,10 +401,11 @@ io.on('connection', socket => {
     if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
     const room = await hydrateRoom(code)
     const invited = readRoomInvitation(inviteToken, code, socket.data.user?.sub)
-    if (room.access?.passwordHash && !invited && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
     const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
-    if (spectator && existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
     const existing = room.members.findIndex(item => item.id === member.id)
+    if (room.access?.inviteOnly && !invited && existing < 0 && existingSpectator < 0) return socket.emit('room:error', { message: 'このルームは招待限定です' })
+    if (room.access?.passwordHash && !invited && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
+    if (spectator && existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
     if (!spectator && existing < 0 && room.members.length >= maxPlayersFor(room.game)) return socket.emit('room:error', { message: `${room.game === 'tag' ? 'このゲーム' : '選択中のゲーム'}は${maxPlayersFor(room.game)}人までです` })
     const previousCode = socket.data.roomCode
     const changingMembership = previousCode && (previousCode !== code || Boolean(socket.data.spectator) !== Boolean(spectator))
@@ -639,7 +640,16 @@ io.on('connection', socket => {
     const room = getRoom(code)
     if (room.members[0]?.id !== socket.data.memberId) return
     const normalized = password.trim().slice(0, 80)
-    room.access = { passwordHash: normalized ? await bcrypt.hash(normalized, 12) : null }
+    room.access = { ...room.access, passwordHash: normalized ? await bcrypt.hash(normalized, 12) : null }
+    broadcastRoom(code)
+  })
+
+  socket.on('room:set-invite-only', ({ inviteOnly }) => {
+    const code = socket.data.roomCode
+    if (!code || typeof inviteOnly !== 'boolean') return
+    const room = getRoom(code)
+    if (room.members[0]?.id !== socket.data.memberId) return
+    room.access = { ...room.access, inviteOnly }
     broadcastRoom(code)
   })
 

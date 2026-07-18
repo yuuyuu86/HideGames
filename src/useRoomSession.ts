@@ -60,6 +60,7 @@ export function useRoomSession() {
   const [awayHistory, setAwayHistory] = useState<AwayHistoryItem[]>([])
   const [resume, setResume] = useState<ResumeState>({ readyIds: [] })
   const [roomLocked, setRoomLocked] = useState(false)
+  const [roomInviteOnly, setRoomInviteOnly] = useState(false)
   const [connected, setConnected] = useState(false)
   const [roomPassword, setRoomPassword] = useState(() => sessionStorage.getItem('hidegames.room-password') ?? '')
   const [roomInviteToken, setRoomInviteToken] = useState(() => sessionStorage.getItem('hidegames.room-invite-token') ?? '')
@@ -116,6 +117,7 @@ export function useRoomSession() {
       if (Array.isArray(next.awayHistory)) setAwayHistory(next.awayHistory)
       if (next.resume && typeof next.resume === 'object') setResume(next.resume)
       if (typeof next.access?.locked === 'boolean') setRoomLocked(next.access.locked)
+      if (typeof next.access?.inviteOnly === 'boolean') setRoomInviteOnly(next.access.inviteOnly)
       if (typeof next.code === 'string' && next.code === joinDetails.current.roomCode && Array.isArray(next.members) && next.members.some((member: { id?: unknown }) => member?.id === localMember.id)) { sessionStorage.removeItem('hidegames.room-invite-token'); setRoomInviteToken('') }
       if (typeof next.code === 'string' && next.code === joinDetails.current.roomCode && Array.isArray(next.members) && next.members.some((member: { id?: unknown }) => member?.id === localMember.id)) setInvitations(current => current.filter(invitation => invitation.code !== next.code))
     })
@@ -160,6 +162,7 @@ export function useRoomSession() {
     awayHistory,
     resume,
     roomLocked,
+    roomInviteOnly,
     connected,
     roomError,
     lastGameStart,
@@ -206,6 +209,7 @@ export function useRoomSession() {
     cancelResume: () => publish({ type: 'resume-cancel' }),
     setGameState: (game: string, state: unknown) => publish({ type: 'game-state', game, state }),
     setRoomPassword: (password: string) => socket.current?.connected && socket.current.emit('room:set-password', { password }),
+    setRoomInviteOnly: (inviteOnly: boolean) => socket.current?.connected && socket.current.emit('room:set-invite-only', { inviteOnly }),
     reportMember: (targetId: string, reason: string) => socket.current?.connected && socket.current.emit('room:report', { targetId, reason }),
     removeMember: (targetId: string) => socket.current?.connected && socket.current.emit('room:kick', { targetId }),
     leaveRoom: () => new Promise<{ ok: boolean; message?: string }>(resolve => {
