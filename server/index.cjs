@@ -233,6 +233,7 @@ function isMahjongCall(room, previous, nextState, senderId) {
   const discard = previous.lastDiscard
   const call = nextState.calledMeld
   if (!discard?.owner || discard.owner === senderId || !call || !['pon', 'chi', 'kan'].includes(call.kind)) return false
+  if (call.kind === 'kan' ? nextState.rinshanId !== senderId : nextState.rinshanId !== undefined) return false
   if (!sameState(previous.scores, nextState.scores) || (previous.riichiPot ?? 0) !== (nextState.riichiPot ?? 0) || Object.values(nextState.ippatsu ?? {}).some(Boolean) || nextState.winner || nextState.winInfo || nextState.draw) return false
   if (nextState.turn !== senderId || (nextState.melds?.[senderId]?.length ?? 0) !== (previous.melds?.[senderId]?.length ?? 0) + 1) return false
   const beforeOpenMelds = previous.openMelds?.[senderId] ?? [], afterOpenMelds = nextState.openMelds?.[senderId] ?? []
@@ -260,7 +261,7 @@ function isMahjongCall(room, previous, nextState, senderId) {
 function sameState(left, right) { return JSON.stringify(left ?? null) === JSON.stringify(right ?? null) }
 function mahjongTileKey(tile) { return `${tile?.suit}${tile?.rank}` }
 function canUpdateMahjongDiscard(room, previous, nextState, senderId) {
-  if (previous.turn !== senderId || nextState.winner || nextState.winInfo || nextState.draw) return false
+  if (previous.turn !== senderId || nextState.winner || nextState.winInfo || nextState.draw || nextState.rinshanId !== undefined) return false
   const beforeHands = previous.hands ?? {}, afterHands = nextState.hands ?? {}
   const beforeHand = beforeHands[senderId], afterHand = afterHands[senderId]
   if (!Array.isArray(beforeHand) || !Array.isArray(afterHand) || !Array.isArray(previous.wall) || !Array.isArray(nextState.wall)) return false
@@ -285,7 +286,7 @@ function canUpdateMahjongDiscard(room, previous, nextState, senderId) {
 }
 
 function canUpdateMahjongWin(room, previous, nextState, senderId) {
-  if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.openMelds, nextState.openMelds) || !sameState(previous.riichi, nextState.riichi) || !sameState(previous.ippatsu, nextState.ippatsu) || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
+  if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.openMelds, nextState.openMelds) || !sameState(previous.riichi, nextState.riichi) || !sameState(previous.ippatsu, nextState.ippatsu) || previous.rinshanId !== nextState.rinshanId || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
   const payments = nextState.winInfo.payments
   const dealerRon = payments?.ron?.dealer, nonDealerRon = payments?.ron?.nonDealer, dealerPays = payments?.tsumo?.dealerPays, nonDealerPays = payments?.tsumo?.nonDealerPays
   // Multiple yakuman can legitimately exceed a single-yakuman ron payment.
@@ -314,7 +315,7 @@ function canUpdateMahjongWin(room, previous, nextState, senderId) {
 
 function isMahjongSelfKan(room, previous, nextState, senderId) {
   const kind = nextState.calledMeld?.kind
-  if (!['ankan', 'kakan'].includes(kind) || previous.turn !== senderId || nextState.turn !== senderId || nextState.winner || nextState.winInfo || nextState.draw || nextState.lastDiscard !== undefined || !sameState(previous.scores, nextState.scores) || (previous.riichiPot ?? 0) !== (nextState.riichiPot ?? 0) || Object.values(nextState.ippatsu ?? {}).some(Boolean)) return false
+  if (!['ankan', 'kakan'].includes(kind) || previous.turn !== senderId || nextState.turn !== senderId || nextState.winner || nextState.winInfo || nextState.draw || nextState.lastDiscard !== undefined || nextState.rinshanId !== senderId || !sameState(previous.scores, nextState.scores) || (previous.riichiPot ?? 0) !== (nextState.riichiPot ?? 0) || Object.values(nextState.ippatsu ?? {}).some(Boolean)) return false
   const beforeHand = previous.hands?.[senderId] ?? [], afterHand = nextState.hands?.[senderId] ?? []
   const beforeMelds = previous.melds?.[senderId] ?? [], afterMelds = nextState.melds?.[senderId] ?? []
   const beforeOpen = previous.openMelds?.[senderId] ?? [], afterOpen = nextState.openMelds?.[senderId] ?? []

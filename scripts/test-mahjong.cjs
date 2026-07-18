@@ -33,6 +33,11 @@ try {
   const ordinaryRiichiWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', riichi: true, ippatsu: false })
   assert(ippatsuWin?.yaku.includes('一発') && !ordinaryRiichiWin?.yaku.includes('一発'), '一発の判定が正しくありません')
 
+  const haiteiWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', haitei: true })
+  const houteiWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'ron', houtei: true })
+  const rinshanWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', rinshan: true, haitei: true })
+  assert(haiteiWin?.yaku.includes('海底摸月') && houteiWin?.yaku.includes('河底撈魚') && rinshanWin?.yaku.includes('嶺上開花') && !rinshanWin.yaku.includes('海底摸月'), '海底・河底・嶺上開花の判定が正しくありません')
+
   console.log('Mahjong scoring tests passed')
 } finally {
   fs.rmSync(outputDirectory, { recursive: true, force: true })

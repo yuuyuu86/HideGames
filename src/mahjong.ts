@@ -6,6 +6,9 @@ export type MahjongWinOptions = {
   winType: MahjongWinType
   riichi?: boolean
   ippatsu?: boolean
+  rinshan?: boolean
+  haitei?: boolean
+  houtei?: boolean
   winningTile?: MahjongTile
   seatWind?: 1 | 2 | 3 | 4
   roundWind?: 1 | 2 | 3 | 4
@@ -154,6 +157,9 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
     const yakuman = (name: string, multiplier = 1) => { yaku.push(name); yakumanCount += multiplier; han = Math.max(han, 13 * yakumanCount) }
     if (options.riichi && closed) add('リーチ', 1)
     if (options.riichi && options.ippatsu && closed) add('一発', 1)
+    if (options.rinshan) add('嶺上開花', 1)
+    else if (options.haitei) add('海底摸月', 1)
+    else if (options.houtei) add('河底撈魚', 1)
     if (options.winType === 'tsumo' && closed) add('門前清自摸和', 1)
     if (sevenPairs) add('七対子', 2)
     if (all.every(isSimple)) add('断么九', 1)
