@@ -96,7 +96,11 @@ async function handleHttp(request, response) {
     const user = readAuthenticatedUser(request)
     if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
     try {
-      if (url.pathname === '/api/friends' && request.method === 'GET') return sendJson(response, 200, { friends: await database.listFriends(user.sub) })
+      if (url.pathname === '/api/friends' && request.method === 'GET') {
+        const onlineIds = new Set([...io.sockets.sockets.values()].map(socket => socket.data.user?.sub).filter(Boolean))
+        const friends = await database.listFriends(user.sub)
+        return sendJson(response, 200, { friends: friends.map(friend => ({ ...friend, online: onlineIds.has(friend.id) })) })
+      }
       if (url.pathname === '/api/friends' && request.method === 'POST') {
         const retryAfter = rateLimit('friend-write', user.sub, 20, 60_000)
         if (retryAfter) return sendJson(response, 429, { error: 'フレンド操作が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
