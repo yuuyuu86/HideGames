@@ -40,6 +40,8 @@ export function usePlayerData() {
     const load = async () => {
       const token = localStorage.getItem('hidegames.auth-token')
       if (!token) return
+      const accountName = localStorage.getItem('hidegames.account-name')?.trim()
+      if (accountName) setData(current => current.displayName === accountName ? current : { ...current, displayName: accountName })
       try {
         const response = await fetch(`${apiBase()}/api/matches`, { headers: { Authorization: `Bearer ${token}` } })
         const body = await response.json() as { matches?: Array<{ id: string; game: string; result: MatchRecord['result']; snapshot?: unknown; created_at: string }> }

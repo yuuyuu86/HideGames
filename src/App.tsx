@@ -78,7 +78,7 @@ const initialMessages: ChatMessage[] = [
 
 function initials(name: string) { return name.slice(0, 1).toUpperCase() }
 
-function Sidebar({ page, setPage, unread }: { page: Page; setPage: (p: Page) => void; unread: number }) {
+function Sidebar({ page, setPage, unread, player }: { page: Page; setPage: (p: Page) => void; unread: number; player: PlayerData }) {
   const items: { key: Page; label: string; icon: typeof Home }[] = [
     { key: 'home', label: 'ホーム', icon: Home }, { key: 'games', label: 'ゲーム', icon: Gamepad2 },
     { key: 'room', label: 'ルーム', icon: Users }, { key: 'youtube', label: 'YouTube', icon: Video },
@@ -91,7 +91,7 @@ function Sidebar({ page, setPage, unread }: { page: Page; setPage: (p: Page) => 
     </button>)}</nav>
     <div className="sidebar-foot">
       <div className="online-pill"><i />オンライン <ChevronDown size={14} /></div>
-      <button className="profile-chip"><span className="avatar mint">Y</span><span><b>yuta</b><small>レベル 12</small></span></button>
+      <button className="profile-chip" onClick={() => setPage('profile')}><span className="avatar mint">{initials(player.displayName)}</span><span><b>{player.displayName}</b><small>レベル {player.level}</small></span></button>
     </div>
   </aside>
 }
@@ -616,7 +616,7 @@ function App() {
   const current=games.find(g=>g.key===selected)!
   const start=(key:GameKey)=>{setSelected(key);room.selectGame(key);setPage('play')}
   return <div className="app-shell">
-    {page !== 'play' && <Sidebar page={page} setPage={setPage} unread={room.messages.length > 3 ? 1 : 0} />}
+    {page !== 'play' && <Sidebar page={page} setPage={setPage} unread={room.messages.length > 3 ? 1 : 0} player={player.data} />}
     <main className={page === 'play' ? 'play-main' : 'main'}>
       {page === 'play' && <GameResultTracker gameKey={selected} gameName={current.title} state={room.gameState[selected]} playerId={room.localMember.id} members={room.members} recordMatch={player.recordMatch}/>}
       {page === 'home' && <HomeScreen setPage={setPage} start={start} favourites={player.data.favourites} />}
