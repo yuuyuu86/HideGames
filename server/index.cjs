@@ -244,6 +244,7 @@ io.on('connection', socket => {
   socket.on('room:event', event => {
     const code = socket.data.roomCode
     if (!code || !event?.type) return
+    if (rateLimit('socket-event', socket.id, 180, 10_000)) return
     const room = getRoom(code)
     const sender = room.members.find(member => member.id === socket.data.memberId)
     const isHost = room.members[0]?.id === socket.data.memberId
@@ -328,6 +329,7 @@ io.on('connection', socket => {
   socket.on('room:signal', ({ target, data }) => {
     const code = socket.data.roomCode
     if (!code || !target || !data || typeof target !== 'string') return
+    if (rateLimit('socket-signal', socket.id, 120, 10_000)) return
     io.to(code).emit('room:signal', { from: socket.data.memberId, target, data })
   })
 
@@ -355,6 +357,8 @@ io.on('connection', socket => {
   })
 
   socket.on('disconnect', () => {
+    clearRateLimit('socket-event', socket.id)
+    clearRateLimit('socket-signal', socket.id)
     const code = socket.data.roomCode
     const memberId = socket.data.memberId
     if (!code || !memberId) return
