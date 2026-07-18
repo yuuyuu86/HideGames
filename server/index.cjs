@@ -330,7 +330,9 @@ io.on('connection', socket => {
     const code = socket.data.roomCode
     if (!code || !target || !data || typeof target !== 'string') return
     if (rateLimit('socket-signal', socket.id, 120, 10_000)) return
-    io.to(code).emit('room:signal', { from: socket.data.memberId, target, data })
+    for (const client of io.sockets.sockets.values()) {
+      if (client.data.roomCode === code && client.data.memberId === target) client.emit('room:signal', { from: socket.data.memberId, target, data })
+    }
   })
 
   socket.on('room:set-password', async ({ password }) => {
