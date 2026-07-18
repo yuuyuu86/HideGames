@@ -198,8 +198,17 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
       })
       if (windTriplets.length === 4) yakuman('大四喜')
       if (windTriplets.length === 3 && pair?.tiles[0].suit === 'z' && pair.tiles[0].rank <= 4) yakuman('小四喜')
-      if (triplets.length === 4 && closed && options.winType === 'tsumo') yakuman('四暗刻')
+      const ronCompletedTriplet = options.winType === 'ron' && options.winningTile && triplets.some(group => !group.open && group.tiles.some(tile => sameTile(tile, options.winningTile!)))
+      const concealedTriplets = triplets.filter(group => !group.open).length - (ronCompletedTriplet ? 1 : 0)
+      if (concealedTriplets >= 3) add('三暗刻', 2)
+      const pairWait = Boolean(options.winningTile && pair?.tiles.some(tile => sameTile(tile, options.winningTile!)))
+      if (triplets.length === 4 && closed && (options.winType === 'tsumo' || pairWait)) yakuman(pairWait && options.winType === 'ron' ? '四暗刻単騎' : '四暗刻')
       if (triplets.filter(group => group.kind === 'quad').length === 4) yakuman('四槓子')
+    }
+    if (closed && !honors && suits.size === 1) {
+      const suit = [...suits][0]
+      const rankCounts = Array.from({ length: 9 }, (_, index) => all.filter(tile => tile.suit === suit && tile.rank === index + 1).length)
+      if (rankCounts[0] >= 3 && rankCounts[8] >= 3 && rankCounts.slice(1, 8).every(count => count >= 1)) yakuman('九蓮宝燈')
     }
     if (!yaku.length) return null
     const dora = (options.doraIndicators ?? []).map(doraForIndicator).reduce((total, doraTile) => total + all.filter(tile => sameTile(tile, doraTile)).length, 0)
