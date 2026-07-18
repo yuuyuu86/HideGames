@@ -173,6 +173,10 @@ const tagExit = { x: 11, y: 1 }
 const tagWarps = [{ from: { x: 0, y: 7 }, to: { x: 11, y: 7 } }, { from: { x: 11, y: 7 }, to: { x: 0, y: 7 } }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
 const roomGames = new Set(['tag', 'othello', 'gomoku', 'connect4', 'shiritori', 'escape', 'future', 'werewolf', 'shogi', 'chess', 'go', 'daifugo', 'uno', 'oldmaid', 'memory', 'sevens', 'mahjong', 'sugoroku', 'mines', 'tetris', 'puzzle', 'wordwolf', 'quiz', 'drawrelay', 'association', 'delivery', 'newsroom', 'alien', 'museum', 'thief', 'orchestra', 'guard', 'sports', 'movie', 'meeting', 'election', 'story', 'letter', 'ghost', 'soundmaze', 'detective', 'court', 'bug'])
+const gamePlayerLimits = {
+  tag: [2, 8], othello: [2, 2], gomoku: [2, 2], connect4: [2, 2], shiritori: [2, 8], escape: [2, 2], future: [2, 5], werewolf: [4, 12], shogi: [2, 2], chess: [2, 2], go: [2, 2], daifugo: [2, 6], uno: [2, 8], oldmaid: [2, 6], memory: [2, 4], sevens: [2, 6], mahjong: [2, 4], sugoroku: [2, 6], mines: [1, 4], tetris: [2, 2], puzzle: [1, 4], wordwolf: [3, 10], quiz: [2, 10], drawrelay: [3, 10], association: [2, 10], delivery: [2, 4], newsroom: [3, 6], alien: [2, 5], museum: [2, 5], thief: [2, 5], orchestra: [2, 6], guard: [2, 6], sports: [2, 8], movie: [3, 8], meeting: [3, 8], election: [3, 8], story: [3, 8], letter: [2, 6], ghost: [2, 4], soundmaze: [2, 4], detective: [1, 4], court: [3, 8], bug: [1, 4],
+}
+const maxPlayersFor = game => gamePlayerLimits[game]?.[1] ?? 8
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
 const colorTurnGames = {
@@ -388,7 +392,7 @@ io.on('connection', socket => {
     const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
     if (spectator && existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
     const existing = room.members.findIndex(item => item.id === member.id)
-    if (!spectator && existing < 0 && room.members.length >= 8) return socket.emit('room:error', { message: 'このルームは8人までです' })
+    if (!spectator && existing < 0 && room.members.length >= maxPlayersFor(room.game)) return socket.emit('room:error', { message: `${room.game === 'tag' ? 'このゲーム' : '選択中のゲーム'}は${maxPlayersFor(room.game)}人までです` })
     const previousCode = socket.data.roomCode
     const changingMembership = previousCode && (previousCode !== code || Boolean(socket.data.spectator) !== Boolean(spectator))
     if (changingMembership) {
@@ -446,6 +450,10 @@ io.on('connection', socket => {
     if (event.type === 'ready' && event.id === socket.data.memberId) room.members = room.members.map(member => member.id === event.id ? { ...member, ready: Boolean(event.ready) } : member)
     if (event.type === 'game') {
       if (!isHost || typeof event.game !== 'string' || !roomGames.has(event.game)) return broadcastRoom(code)
+      if (room.members.length > maxPlayersFor(event.game)) {
+        socket.emit('room:error', { message: `このゲームは${maxPlayersFor(event.game)}人までです。参加人数を減らしてから変更してください` })
+        return broadcastRoom(code)
+      }
       room.game = event.game
       if (event.game === 'tag') {
         const state = tagState(room)
@@ -575,7 +583,7 @@ io.on('connection', socket => {
     const room = getRoom(code)
     const spectator = (room.spectators ?? []).find(member => member.id === socket.data.memberId)
     if (!spectator) return ack({ ok: false, message: '観戦者情報が見つかりません' })
-    if (room.members.length >= 8) return ack({ ok: false, message: 'このルームは8人までです' })
+    if (room.members.length >= maxPlayersFor(room.game)) return ack({ ok: false, message: `このゲームは${maxPlayersFor(room.game)}人までです` })
     if (!gameRoundFinished(room)) return ack({ ok: false, message: 'このラウンドの終了後に参加できます' })
     room.spectators = room.spectators.filter(member => member.id !== spectator.id)
     room.members.push({ ...spectator, ready: false, connected: true })
