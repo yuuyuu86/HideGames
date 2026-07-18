@@ -1,11 +1,15 @@
 const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { execFile } = require('child_process')
+const { promisify } = require('util')
 
 let mainWindow
 let hidden = false
 let awayShortcut = 'CommandOrControl+Shift+H'
 let pendingRoomCode = null
+let brightnessBeforeAway = null
+const execFileAsync = promisify(execFile)
 const shortcutSettingsPath = () => path.join(app.getPath('userData'), 'hidegames-settings.json')
 function loadAwayShortcut() { try { const saved = JSON.parse(fs.readFileSync(shortcutSettingsPath(), 'utf8')); return typeof saved.awayShortcut === 'string' && saved.awayShortcut ? saved.awayShortcut : awayShortcut } catch { return awayShortcut } }
 function saveAwayShortcut() { try { fs.writeFileSync(shortcutSettingsPath(), JSON.stringify({ awayShortcut }), { mode: 0o600 }) } catch (error) { console.error('Could not save away shortcut:', error.message) } }
@@ -29,7 +33,31 @@ ipcMain.handle('show-window', showWindow)
 // Native brightness control differs across operating systems and external displays.
 // Keep the explicit raise/restore protocol so a supported adapter can preserve the
 // original level without changing the away-state contract in the renderer.
-ipcMain.handle('set-window-brightness', (_event, _value, _restore = false) => ({ supported: false }))
+async function setExternalBrightness(value, restore = false) {
+  if (process.platform !== 'darwin') return { supported: false, message: 'このOSの物理ディスプレイ制御には未対応です' }
+  try {
+    if (restore) {
+      if (brightnessBeforeAway === null) return { supported: true }
+      await execFileAsync('ddcctl', ['-d', '1', '-b', String(brightnessBeforeAway)])
+      brightnessBeforeAway = null
+      return { supported: true }
+    }
+    if (brightnessBeforeAway === null) {
+      const { stdout } = await execFileAsync('ddcctl', ['-d', '1', '-g', 'b'])
+      const values = [...stdout.matchAll(/\d+/g)].map(match => Number(match[0]))
+      const current = values.at(-1)
+      if (!Number.isFinite(current)) return { supported: false, message: '現在の明るさを取得できませんでした' }
+      brightnessBeforeAway = current
+    }
+    const next = Math.max(1, Math.min(100, Math.round(Number(value))))
+    await execFileAsync('ddcctl', ['-d', '1', '-b', String(next)])
+    return { supported: true }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { supported: false, message: 'ddcctl が見つかりません。対応モニターでは brew install ddcctl を実行してください' }
+    return { supported: false, message: 'このディスプレイはDDC/CIの明るさ制御に対応していません' }
+  }
+}
+ipcMain.handle('set-window-brightness', (_event, value, restore = false) => setExternalBrightness(value, restore))
 ipcMain.handle('set-away-shortcut', (_event, accelerator) => {
   if (typeof accelerator !== 'string' || !accelerator.trim()) return { ok: false, message: 'キーを入力してください' }
   const next = accelerator.replace(/Ctrl/gi, 'CommandOrControl').replace(/\s*\+\s*/g, '+')
