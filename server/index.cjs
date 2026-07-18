@@ -71,6 +71,32 @@ async function handleHttp(request, response) {
       return sendJson(response, 405, { error: 'Method not allowed' })
     } catch (error) { console.error('Could not handle match API:', error.message); return sendJson(response, 500, { error: '記録の処理に失敗しました' }) }
   }
+  if (url.pathname === '/api/friends' || url.pathname.startsWith('/api/friends/')) {
+    if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: 'フレンドサービスはまだ設定されていません' })
+    const user = readAuthenticatedUser(request)
+    if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+    try {
+      if (url.pathname === '/api/friends' && request.method === 'GET') return sendJson(response, 200, { friends: await database.listFriends(user.sub) })
+      if (url.pathname === '/api/friends' && request.method === 'POST') {
+        const retryAfter = rateLimit('friend-write', user.sub, 20, 60_000)
+        if (retryAfter) return sendJson(response, 429, { error: 'フレンド操作が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
+        const { email: rawEmail } = await readJson(request)
+        const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
+        if (!/^\S+@\S+\.\S+$/.test(email)) return sendJson(response, 400, { error: 'フレンドのメールアドレスを入力してください' })
+        return sendJson(response, 201, { friend: await database.createFriendship(user.sub, email) })
+      }
+      if (url.pathname.startsWith('/api/friends/') && request.method === 'DELETE') {
+        const friendId = decodeURIComponent(url.pathname.slice('/api/friends/'.length))
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(friendId)) return sendJson(response, 400, { error: 'フレンドIDが正しくありません' })
+        const removed = await database.removeFriendship(user.sub, friendId)
+        return sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: 'フレンドが見つかりません' })
+      }
+      return sendJson(response, 405, { error: 'Method not allowed' })
+    } catch (error) {
+      const status = error.code === 'FRIEND_NOT_FOUND' ? 404 : error.code === 'FRIEND_SELF' ? 400 : 500
+      return sendJson(response, status, { error: error.message === 'DATABASE_URL is not configured' ? 'フレンドサービスはまだ設定されていません' : error.message || 'フレンドの処理に失敗しました' })
+    }
+  }
   if (request.method !== 'POST' || !['/auth/signup', '/auth/login'].includes(url.pathname)) return serveStatic(request, response) || sendJson(response, 404, { error: 'Not found' })
   if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '認証サービスはまだ設定されていません' })
   const identity = clientKey(request)

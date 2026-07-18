@@ -716,7 +716,79 @@ function YoutubeScreen({ url, setUrl, sharedState, syncState }: { url: string; s
   const publish = (nextUrl = input, nextPlaying = playing) => { setUrl(nextUrl); setPlaying(nextPlaying); syncState({ url: nextUrl, playing: nextPlaying, startedAt: Date.now() }) }
   return <div className="page youtube-page"><header className="page-title"><div><p className="eyebrow">WATCH TOGETHER</p><h1>YouTubeを一緒に見る</h1><p>ルームの参加者へ、動画URLと再生状態を共有します。</p></div></header><div className="youtube-box panel">{embed?<iframe ref={frame} src={embed} title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen/>:<div className="video-empty"><Video size={40}/><h2>動画を再生しよう</h2><p>YouTubeの動画URLまたはプレイリストURLを貼り付けてください。</p></div>}<form onSubmit={event=>{event.preventDefault();publish(input, false)}}><input value={input} onChange={event=>setInput(event.target.value)} placeholder="https://www.youtube.com/watch?v=..."/><button className="primary">ルームに共有</button></form></div><div className="youtube-controls"><button className="primary" disabled={!embed} onClick={()=>{command('playVideo');publish(input,true)}}><Play size={16} fill="currentColor"/>全員で再生</button><button className="secondary" disabled={!embed} onClick={()=>{command('pauseVideo');publish(input,false)}}><Pause size={16}/>全員で停止</button><span>{playing ? '再生状態を共有中' : '停止状態を共有中'}</span></div><div className="sync-note"><Radio size={18}/><span><b>同期視聴</b><small>動画URLと再生・停止をルーム内で同期します。自動再生はブラウザの音声ポリシーに従います。</small></span></div></div>
 }
-function FriendsScreen({ roomCode, onInvite }: { roomCode: string; onInvite: (message: string) => void }) { const [friends, setFriends] = useState(() => { try { return JSON.parse(localStorage.getItem('hidegames.friends') ?? 'null') ?? people.slice(1) } catch { return people.slice(1) } }); const [name, setName] = useState(''); const [notice, setNotice] = useState(''); useEffect(() => localStorage.setItem('hidegames.friends', JSON.stringify(friends)), [friends]); const add = (event: React.FormEvent) => { event.preventDefault(); const next = name.trim(); if (!next || friends.some((friend: typeof people[number]) => friend.name === next)) return; setFriends((current: typeof people) => [...current, { name: next, state: '準備OK', color: 'blue' }]); setName('') }; return <div className="page"><header className="page-title"><div><p className="eyebrow">YOUR PEOPLE</p><h1>フレンド</h1><p>オンラインのフレンドを誘って、すぐ遊ぼう。</p></div></header><form className="friend-add panel" onSubmit={add}><input value={name} onChange={event=>setName(event.target.value)} placeholder="フレンド名を入力"/><button className="primary"><Plus size={17}/>追加</button></form><div className="friends-list panel">{friends.map((p: typeof people[number])=><div className="friend" key={p.name}><span className={`avatar ${p.color}`}>{initials(p.name)}</span><span><b>{p.name}</b><small><i/>オンライン ・ HideGamesを起動中</small></span><button className="secondary" onClick={()=>{onInvite(`${p.name} さんをルーム ${roomCode} に招待しました`);setNotice(`${p.name} さんへ招待を送りました`)}}>招待する</button><button className="text-button" onClick={()=>setFriends((current: typeof people)=>current.filter(friend=>friend.name!==p.name))}>削除</button></div>)}</div>{notice&&<p className="setting-status">{notice}</p>}</div>}
+type FriendEntry = { id?: string; name: string; color: string; remote?: boolean }
+function FriendsScreen({ roomCode, onInvite }: { roomCode: string; onInvite: (message: string) => void }) {
+  const [localFriends, setLocalFriends] = useState<FriendEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem('hidegames.friends') ?? 'null') ?? people.slice(1).map(({ name, color }) => ({ name, color })) }
+    catch { return people.slice(1).map(({ name, color }) => ({ name, color })) }
+  })
+  const [remoteFriends, setRemoteFriends] = useState<FriendEntry[]>([])
+  const [loggedIn, setLoggedIn] = useState(() => Boolean(localStorage.getItem('hidegames.auth-token')))
+  const [input, setInput] = useState('')
+  const [notice, setNotice] = useState('')
+  const [loading, setLoading] = useState(false)
+  const apiBase = () => {
+    const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    return import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
+  }
+  const loadRemoteFriends = async () => {
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (!token) return
+    setLoading(true)
+    try {
+      const response = await fetch(`${apiBase()}/api/friends`, { headers: { Authorization: `Bearer ${token}` } })
+      const body = await response.json() as { friends?: { id: string; display_name: string }[]; error?: string }
+      if (!response.ok) throw new Error(body.error ?? 'フレンド一覧を取得できませんでした')
+      setRemoteFriends((body.friends ?? []).map((friend, index) => ({ id: friend.id, name: friend.display_name, color: ['mint', 'purple', 'blue', 'orange'][index % 4], remote: true })))
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'フレンド一覧を取得できませんでした') }
+    finally { setLoading(false) }
+  }
+  useEffect(() => localStorage.setItem('hidegames.friends', JSON.stringify(localFriends)), [localFriends])
+  useEffect(() => {
+    const refresh = () => setLoggedIn(Boolean(localStorage.getItem('hidegames.auth-token')))
+    window.addEventListener('hidegames-auth', refresh)
+    return () => window.removeEventListener('hidegames-auth', refresh)
+  }, [])
+  useEffect(() => { if (loggedIn) void loadRemoteFriends() }, [loggedIn])
+  const add = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const next = input.trim()
+    if (!next) return
+    if (!loggedIn) {
+      if (localFriends.some(friend => friend.name === next)) { setNotice('同じ名前のフレンドは追加済みです'); return }
+      setLocalFriends(current => [...current, { name: next, color: 'blue' }])
+      setInput(''); setNotice(`${next} さんをこの端末のフレンドに追加しました`)
+      return
+    }
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (!token) return
+    setLoading(true)
+    try {
+      const response = await fetch(`${apiBase()}/api/friends`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email: next }) })
+      const body = await response.json() as { friend?: { display_name: string }; error?: string }
+      if (!response.ok) throw new Error(body.error ?? 'フレンドを追加できませんでした')
+      setInput(''); setNotice(`${body.friend?.display_name ?? next} さんをフレンドに追加しました`)
+      await loadRemoteFriends()
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'フレンドを追加できませんでした') }
+    finally { setLoading(false) }
+  }
+  const remove = async (friend: FriendEntry) => {
+    if (!friend.remote || !friend.id) { setLocalFriends(current => current.filter(item => item.name !== friend.name)); return }
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (!token) return
+    setLoading(true)
+    try {
+      const response = await fetch(`${apiBase()}/api/friends/${encodeURIComponent(friend.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      const body = await response.json() as { error?: string }
+      if (!response.ok) throw new Error(body.error ?? 'フレンドを削除できませんでした')
+      setRemoteFriends(current => current.filter(item => item.id !== friend.id))
+      setNotice(`${friend.name} さんをフレンドから削除しました`)
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'フレンドを削除できませんでした') }
+    finally { setLoading(false) }
+  }
+  const friends = loggedIn ? remoteFriends : localFriends
+  return <div className="page"><header className="page-title"><div><p className="eyebrow">YOUR PEOPLE</p><h1>フレンド</h1><p>{loggedIn ? 'メールアドレスで追加したフレンドは、ログインした他の端末にも同期されます。' : 'ログインするとフレンドを複数の端末で同期できます。'}</p></div></header><form className="friend-add panel" onSubmit={add}><input value={input} onChange={event => setInput(event.target.value)} placeholder={loggedIn ? 'フレンドのメールアドレス' : 'フレンド名を入力'} type={loggedIn ? 'email' : 'text'} required/><button className="primary" disabled={loading}><Plus size={17}/>{loading ? '同期中' : '追加'}</button></form><div className="friends-list panel">{loading && !friends.length ? <p className="empty-state">フレンドを読み込んでいます。</p> : friends.length ? friends.map(friend => <div className="friend" key={friend.id ?? friend.name}><span className={`avatar ${friend.color}`}>{initials(friend.name)}</span><span><b>{friend.name}</b><small><i/> {friend.remote ? '登録済み ・ ルームへ招待できます' : 'この端末のフレンド'}</small></span><button className="secondary" onClick={() => { onInvite(`${friend.name} さんをルーム ${roomCode} に招待しました`); setNotice(`${friend.name} さんへ招待を送りました`) }}>招待する</button><button className="text-button" onClick={() => void remove(friend)} disabled={loading}>削除</button></div>) : <p className="empty-state">{loggedIn ? 'まだフレンドはいません。メールアドレスで追加してください。' : 'フレンド名を追加するか、ログインして同期を始めてください。'}</p>}</div>{notice && <p className="setting-status">{notice}</p>}</div>
+}
 function AuthPanel({ defaultName }: { defaultName: string }) {
   const [mode,setMode]=useState<'login'|'signup'>('signup'); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [name,setName]=useState(defaultName); const [status,setStatus]=useState(''); const [loggedIn,setLoggedIn]=useState(()=>Boolean(localStorage.getItem('hidegames.auth-token')))
   useEffect(()=>{const refresh=()=>setLoggedIn(Boolean(localStorage.getItem('hidegames.auth-token')));window.addEventListener('hidegames-auth',refresh);return()=>window.removeEventListener('hidegames-auth',refresh)},[])
