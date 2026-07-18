@@ -214,13 +214,22 @@ io.on('connection', socket => {
   socket.on('room:join', async ({ code, member, password }) => {
     if (!code || !member?.id || !member?.name) return
     if (socket.data.user) { member = { ...member, id: socket.data.user.sub, name: socket.data.user.name } }
+    member = {
+      ...member,
+      id: String(member.id).slice(0, 80),
+      name: String(member.name).trim().slice(0, 32),
+      color: ['mint', 'purple', 'blue', 'orange'].includes(member.color) ? member.color : 'mint',
+      ready: Boolean(member.ready),
+    }
+    if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
     const room = await hydrateRoom(code)
     if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
+    const existing = room.members.findIndex(item => item.id === member.id)
+    if (existing < 0 && room.members.length >= 8) return socket.emit('room:error', { message: 'このルームは8人までです' })
     socket.data.roomCode = code
     socket.data.memberId = member.id
     socket.join(code)
     cancelPendingDisconnect(code, member.id)
-    const existing = room.members.findIndex(item => item.id === member.id)
     if (existing >= 0) room.members[existing] = { ...room.members[existing], ...member, connected: true }
     else room.members.push({ ...member, connected: true })
     normalizeHosts(room)
