@@ -133,8 +133,33 @@ async function handleHttp(request, response) {
       }
       return sendJson(response, 405, { error: 'Method not allowed' })
     } catch (error) {
-      const status = error.code === 'FRIEND_NOT_FOUND' ? 404 : error.code === 'FRIEND_SELF' ? 400 : 500
+      const status = error.code === 'FRIEND_NOT_FOUND' ? 404 : ['FRIEND_SELF', 'FRIEND_BLOCKED'].includes(error.code) ? 400 : 500
       return sendJson(response, status, { error: error.message === 'DATABASE_URL is not configured' ? 'フレンドサービスはまだ設定されていません' : error.message || 'フレンドの処理に失敗しました' })
+    }
+  }
+  if (url.pathname === '/api/blocks' || url.pathname.startsWith('/api/blocks/')) {
+    if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: 'ブロックサービスはまだ設定されていません' })
+    const user = readAuthenticatedUser(request)
+    if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+    try {
+      if (url.pathname === '/api/blocks' && request.method === 'GET') return sendJson(response, 200, { blocks: await database.listBlocks(user.sub) })
+      if (url.pathname === '/api/blocks' && request.method === 'POST') {
+        const retryAfter = rateLimit('block-write', user.sub, 20, 60_000)
+        if (retryAfter) return sendJson(response, 429, { error: 'ブロック操作が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
+        const { userId } = await readJson(request)
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) return sendJson(response, 400, { error: 'ブロックするユーザーが正しくありません' })
+        return sendJson(response, 201, { block: await database.createBlock(user.sub, userId) })
+      }
+      if (url.pathname.startsWith('/api/blocks/') && request.method === 'DELETE') {
+        const targetId = decodeURIComponent(url.pathname.slice('/api/blocks/'.length))
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) return sendJson(response, 400, { error: 'ブロックIDが正しくありません' })
+        const removed = await database.removeBlock(user.sub, targetId)
+        return sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: 'ブロック情報が見つかりません' })
+      }
+      return sendJson(response, 405, { error: 'Method not allowed' })
+    } catch (error) {
+      const status = error.code === 'BLOCK_NOT_FOUND' ? 404 : error.code === 'BLOCK_SELF' ? 400 : 500
+      return sendJson(response, status, { error: error.message === 'DATABASE_URL is not configured' ? 'ブロックサービスはまだ設定されていません' : error.message || 'ブロックの処理に失敗しました' })
     }
   }
   if (url.pathname === '/api/profile') {
@@ -674,9 +699,10 @@ io.on('connection', socket => {
     const room = getRoom(code)
     const sender = room.members.find(member => member.id === socket.data.memberId)
     let friends = false
-    try { friends = await database.areFriends(senderId, targetId) }
+    let blocked = false
+    try { [friends, blocked] = await Promise.all([database.areFriends(senderId, targetId), database.isBlockedBetween(senderId, targetId)]) }
     catch (error) { console.error('Could not validate room invitation:', error.message); return ack({ ok: false, message: '招待の確認に失敗しました。少し待ってから再試行してください' }) }
-    if (!sender || !friends) return ack({ ok: false, message: 'フレンドのみ招待できます' })
+    if (!sender || !friends || blocked) return ack({ ok: false, message: 'このユーザーには招待を送信できません' })
     const invitation = { id: `${Date.now()}-${senderId}`, code, game: room.game, from: sender.name, at: Date.now(), token: jwt.sign({ sub: targetId, code, purpose: 'room-invite' }, jwtSecret, { issuer: 'hidegames-room-invite', expiresIn: '10m' }) }
     let delivered = false
     for (const client of io.sockets.sockets.values()) {

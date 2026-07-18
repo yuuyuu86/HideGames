@@ -41,10 +41,18 @@ async function initializeDatabase() {
       primary key (user_id, friend_id),
       check (user_id <> friend_id)
     );
+    create table if not exists hidegames_blocks (
+      blocker_id uuid not null references hidegames_users(id) on delete cascade,
+      blocked_id uuid not null references hidegames_users(id) on delete cascade,
+      created_at timestamptz not null default now(),
+      primary key (blocker_id, blocked_id),
+      check (blocker_id <> blocked_id)
+    );
     create index if not exists hidegames_reports_room_idx on hidegames_reports (room_code, created_at desc);
     create index if not exists hidegames_match_results_user_idx on hidegames_match_results (user_id, created_at desc);
     create index if not exists hidegames_match_results_game_idx on hidegames_match_results (game, result, created_at desc);
     create index if not exists hidegames_friendships_friend_idx on hidegames_friendships (friend_id, created_at desc);
+    create index if not exists hidegames_blocks_blocked_idx on hidegames_blocks (blocked_id, created_at desc);
   `)
   return true
 }
@@ -105,6 +113,7 @@ async function createFriendship(userId, email) {
   const target = await findUserByEmail(email)
   if (!target) { const error = new Error('フレンドのアカウントが見つかりません'); error.code = 'FRIEND_NOT_FOUND'; throw error }
   if (target.id === userId) { const error = new Error('自分自身はフレンドに追加できません'); error.code = 'FRIEND_SELF'; throw error }
+  if (await isBlockedBetween(userId, target.id)) { const error = new Error('このユーザーとはフレンドになれません'); error.code = 'FRIEND_BLOCKED'; throw error }
   await pool.query(`insert into hidegames_friendships (user_id, friend_id) values ($1, $2), ($2, $1)
     on conflict (user_id, friend_id) do nothing`, [userId, target.id])
   return { id: target.id, display_name: target.display_name }
@@ -123,6 +132,47 @@ async function areFriends(userId, friendId) {
   return result.rowCount > 0
 }
 
+async function listBlocks(userId) {
+  if (!pool) return []
+  const result = await pool.query(`select u.id, u.display_name, b.created_at
+    from hidegames_blocks b join hidegames_users u on u.id = b.blocked_id
+    where b.blocker_id = $1 order by b.created_at desc`, [userId])
+  return result.rows
+}
+
+async function createBlock(userId, targetId) {
+  if (!pool) throw new Error('DATABASE_URL is not configured')
+  if (targetId === userId) { const error = new Error('自分自身はブロックできません'); error.code = 'BLOCK_SELF'; throw error }
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const target = await client.query('select id, display_name from hidegames_users where id = $1', [targetId])
+    if (!target.rowCount) { const error = new Error('ブロックするアカウントが見つかりません'); error.code = 'BLOCK_NOT_FOUND'; throw error }
+    await client.query(`delete from hidegames_friendships where (user_id = $1 and friend_id = $2) or (user_id = $2 and friend_id = $1)`, [userId, targetId])
+    await client.query(`insert into hidegames_blocks (blocker_id, blocked_id) values ($1, $2) on conflict do nothing`, [userId, targetId])
+    await client.query('commit')
+    return target.rows[0]
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+async function removeBlock(userId, targetId) {
+  if (!pool) throw new Error('DATABASE_URL is not configured')
+  const result = await pool.query('delete from hidegames_blocks where blocker_id = $1 and blocked_id = $2', [userId, targetId])
+  return result.rowCount > 0
+}
+
+async function isBlockedBetween(firstUserId, secondUserId) {
+  if (!pool) return false
+  const result = await pool.query(`select 1 from hidegames_blocks
+    where (blocker_id = $1 and blocked_id = $2) or (blocker_id = $2 and blocked_id = $1)`, [firstUserId, secondUserId])
+  return result.rowCount > 0
+}
+
 async function loadRoom(code) {
   if (!pool) return null
   const result = await pool.query('select state from hidegames_rooms where code = $1', [code])
@@ -130,7 +180,7 @@ async function loadRoom(code) {
 }
 
 function serializeRoom(room) {
-  return { ...room, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: room.access?.passwordHash ?? null } }
+  return { ...room, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: room.access?.passwordHash ?? null, inviteOnly: Boolean(room.access?.inviteOnly) } }
 }
 
 async function saveRoom(code, room) {
@@ -151,4 +201,4 @@ async function saveReport(report) {
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, deleteRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, areFriends, serializeRoom, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, deleteRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, areFriends, listBlocks, createBlock, removeBlock, isBlockedBetween, serializeRoom, enabled: Boolean(pool) }

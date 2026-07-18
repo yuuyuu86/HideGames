@@ -58,10 +58,19 @@ export function usePlayerData() {
       try {
         const response = await fetch(`${apiBase()}/api/matches`, { headers: { Authorization: `Bearer ${token}` } })
         const body = await response.json() as { matches?: Array<{ id: string; game: string; result: MatchRecord['result']; snapshot?: unknown; created_at: string }> }
-        if (!response.ok || !body.matches) return
-        const records = body.matches.map(fromServer)
-        setData(current => ({ ...current, matches: records.map(item => item.match), replays: records.map(item => item.replay) }))
+        if (response.ok && body.matches) {
+          const records = body.matches.map(fromServer)
+          setData(current => ({ ...current, matches: records.map(item => item.match), replays: records.map(item => item.replay) }))
+        }
       } catch { /* Offline use keeps the local history. */ }
+      try {
+        const response = await fetch(`${apiBase()}/api/blocks`, { headers: { Authorization: `Bearer ${token}` } })
+        const body = await response.json() as { blocks?: Array<{ id: string; display_name: string }> }
+        if (response.ok && body.blocks) {
+          const blockedPlayers = body.blocks.map(block => ({ id: block.id, name: block.display_name }))
+          setData(current => ({ ...current, blockedPlayers, recentPlayers: (current.recentPlayers ?? []).filter(player => !blockedPlayers.some(block => block.id === player.id)) }))
+        }
+      } catch { /* Local blocks remain available if the service is offline. */ }
     }
     const onAuth = () => {
       setActiveStorageKey(storageKey())
@@ -104,7 +113,15 @@ export function usePlayerData() {
     const now=new Date().toISOString();const blockedIds=new Set((current.blockedPlayers??[]).map(player=>player.id));const additions=players.filter(player=>player.id!==ownId&&!blockedIds.has(player.id)).map(player=>({...player,playedAt:now}));const recentPlayers=[...additions,...(current.recentPlayers??[]).filter(player=>!additions.some(next=>next.id===player.id)&&!blockedIds.has(player.id))].slice(0,12)
     return JSON.stringify(recentPlayers)===JSON.stringify(current.recentPlayers??[])?current:{...current,recentPlayers}
   }), [])
-  const blockPlayer = useCallback((player: { id: string; name: string }) => setData(current => ({ ...current, blockedPlayers: [...(current.blockedPlayers??[]).filter(item=>item.id!==player.id),player], recentPlayers:(current.recentPlayers??[]).filter(item=>item.id!==player.id) })), [])
-  const unblockPlayer = useCallback((id: string) => setData(current => ({ ...current, blockedPlayers:(current.blockedPlayers??[]).filter(player=>player.id!==id) })), [])
+  const blockPlayer = useCallback((player: { id: string; name: string }) => {
+    setData(current => ({ ...current, blockedPlayers: [...(current.blockedPlayers??[]).filter(item=>item.id!==player.id),player], recentPlayers:(current.recentPlayers??[]).filter(item=>item.id!==player.id) }))
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (token && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(player.id)) void fetch(`${apiBase()}/api/blocks`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ userId: player.id }) }).then(() => window.dispatchEvent(new Event('hidegames-friends'))).catch(() => undefined)
+  }, [])
+  const unblockPlayer = useCallback((id: string) => {
+    setData(current => ({ ...current, blockedPlayers:(current.blockedPlayers??[]).filter(player=>player.id!==id) }))
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (token && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) void fetch(`${apiBase()}/api/blocks/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).then(() => window.dispatchEvent(new Event('hidegames-friends'))).catch(() => undefined)
+  }, [])
   return { data, updateProfile, updateAppearance, recordMatch, toggleFavourite, recordRecentPlayers, blockPlayer, unblockPlayer }
 }
