@@ -192,6 +192,25 @@ function canUpdateTetrisState(room, previous, nextState, senderId) {
   return true
 }
 
+function canUpdatePuzzleState(room, previous, nextState, senderId) {
+  const beforePlayers = previous.players
+  const afterPlayers = nextState.players
+  if (!beforePlayers || !afterPlayers || previous.turn !== senderId || !afterPlayers[senderId]) return false
+  const senderIndex = room.members.findIndex(member => member.id === senderId)
+  const nextPlayer = Array.from({ length: room.members.length }, (_, offset) => room.members[(senderIndex + 1 + offset) % room.members.length]?.id).find(id => id && (id === senderId || !beforePlayers[id]?.lost))
+  if (nextState.turn !== senderId && nextState.turn !== nextPlayer) return false
+  for (const member of room.members) {
+    if (member.id === senderId) continue
+    const before = beforePlayers[member.id]
+    const after = afterPlayers[member.id]
+    if (!before || !after) return false
+    const { pendingGarbage: beforeGarbage = 0, ...beforeRest } = before
+    const { pendingGarbage: afterGarbage = 0, ...afterRest } = after
+    if (JSON.stringify(beforeRest) !== JSON.stringify(afterRest) || !Number.isInteger(afterGarbage) || afterGarbage < beforeGarbage || afterGarbage > beforeGarbage + 3) return false
+  }
+  return true
+}
+
 function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game === 'tag' || !nextState || typeof nextState !== 'object') return false
   if (game === 'tournament') return isHost
@@ -201,6 +220,7 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (!previous || typeof previous !== 'object') return isHost
   if (previous.winner || previous.loser || previous.lost || previous.draw) return isHost
   if (game === 'tetris') return canUpdateTetrisState(room, previous, nextState, senderId)
+  if (game === 'puzzle') return canUpdatePuzzleState(room, previous, nextState, senderId)
   if (game === 'mahjong' && nextState.winner === senderId && nextState.winType === 'ron' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId) return true
   if (game === 'mahjong' && isMahjongCall(room, previous, nextState, senderId)) return true
   const colors = colorTurnGames[game]
