@@ -118,7 +118,7 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
     <button className="chat-title" onClick={() => setOpen(!open)} aria-expanded={open}><MessageCircle size={17} /><span>チャット</span>{!open && <b className="unread-dot">3</b>}<ChevronDown size={16} /></button>
     {open && <>
       <div className="chat-list">{messages.slice(-5).map((m, i) => <div className="chat-line" key={`${m.time}-${i}`}><span className={`tiny-avatar ${m.tone}`}>{initials(m.name)}</span><p><b>{m.name}</b><small>{m.time}</small><span>{m.text}</span></p></div>)}</div>
-      <form className="chat-form" onSubmit={submit}><input aria-label="チャットメッセージ" value={text} onChange={e => setText(e.target.value)} placeholder={paused ? '待機中のメッセージ…' : 'メッセージを入力…'} /><button aria-label="送信"><FaPaperPlane /></button></form>
+      <div className="chat-stamps" aria-label="定型メッセージ"><button type="button" onClick={()=>addMessage('よろしくお願いします')}>よろしく</button><button type="button" onClick={()=>addMessage('ナイスプレイ')}>ナイス</button><button type="button" onClick={()=>addMessage('少し待ってください')}>待って</button><button type="button" onClick={()=>addMessage('おつかれさまでした')}>おつかれ</button></div><form className="chat-form" onSubmit={submit}><input aria-label="チャットメッセージ" value={text} onChange={e => setText(e.target.value)} placeholder={paused ? '待機中のメッセージ…' : 'メッセージを入力…'} /><button aria-label="送信"><FaPaperPlane /></button></form>
     </>}
   </section>
 }
