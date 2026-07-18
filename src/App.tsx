@@ -165,6 +165,7 @@ function VoiceChat({ playerId, sendSignal, onSignal, announceVoice, onVoice }: {
   const [active, setActive] = useState(false)
   const [muted, setMuted] = useState(false)
   const [status, setStatus] = useState('ボイス未参加')
+  const [showConsent, setShowConsent] = useState(false)
   const stream = useRef<MediaStream | null>(null)
   const peers = useRef(new Map<string, RTCPeerConnection>())
   const audios = useRef(new Map<string, HTMLAudioElement>())
@@ -199,12 +200,13 @@ function VoiceChat({ playerId, sendSignal, onSignal, announceVoice, onVoice }: {
   useEffect(() => () => close(), [])
   useEffect(()=>{audios.current.forEach(audio=>{audio.volume=volume/100})},[volume])
   const join = async () => {
+    setShowConsent(false)
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
       setActive(true); setStatus('接続中'); announceVoice(true)
     } catch { setStatus('マイクを利用できません。OSまたはブラウザの許可を確認してください。') }
   }
-  return <section className="voice-dock"><button className={`voice-main ${active ? 'active' : ''}`} onClick={active ? close : join}>{active ? <Mic size={15}/> : <MicOff size={15}/>}<span>{active ? 'ボイス参加中' : 'ボイスに参加'}</span></button>{active && <button className="voice-mute" onClick={()=>{const next=!muted;stream.current?.getAudioTracks().forEach(track=>track.enabled=!next);setMuted(next)}} aria-label="マイクをミュート">{muted?<MicOff size={15}/>:<Mic size={15}/>}</button>}<small>{status}</small></section>
+  return <section className="voice-dock"><button className={`voice-main ${active ? 'active' : ''}`} onClick={active ? close : () => setShowConsent(true)}>{active ? <Mic size={15}/> : <MicOff size={15}/>}<span>{active ? 'ボイス参加中' : 'ボイスに参加'}</span></button>{active && <button className="voice-mute" onClick={()=>{const next=!muted;stream.current?.getAudioTracks().forEach(track=>track.enabled=!next);setMuted(next)}} aria-label="マイクをミュート">{muted?<MicOff size={15}/>:<Mic size={15}/>}</button>}{showConsent && <div className="voice-consent" role="dialog" aria-label="マイクの利用確認"><b>マイクを使いますか？</b><p>音声は参加中のルームメンバーへ直接送信されます。いつでもミュート・退出できます。</p><div><button className="secondary" onClick={()=>setShowConsent(false)}>今は使わない</button><button className="primary" onClick={()=>void join()}>マイクを有効にする</button></div></div>}<small>{status}</small></section>
 }
 
 function PauseOverlay({ awayNames, resume, playerId, memberCount, isHost, onReady, onCancel, sendMessage }: { awayNames: string[]; resume: { readyIds: string[]; startsAt?: number }; playerId: string; memberCount: number; isHost: boolean; onReady: (ready: boolean) => void; onCancel: () => void; sendMessage: (message: string) => void }) {
