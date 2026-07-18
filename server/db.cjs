@@ -26,7 +26,17 @@ async function initializeDatabase() {
       display_name text not null,
       created_at timestamptz not null default now()
     );
+    create table if not exists hidegames_match_results (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid not null references hidegames_users(id) on delete cascade,
+      game varchar(80) not null,
+      result varchar(8) not null check (result in ('win', 'loss', 'draw')),
+      snapshot jsonb,
+      created_at timestamptz not null default now()
+    );
     create index if not exists hidegames_reports_room_idx on hidegames_reports (room_code, created_at desc);
+    create index if not exists hidegames_match_results_user_idx on hidegames_match_results (user_id, created_at desc);
+    create index if not exists hidegames_match_results_game_idx on hidegames_match_results (game, result, created_at desc);
   `)
   return true
 }
@@ -42,6 +52,30 @@ async function findUserByEmail(email) {
   if (!pool) return null
   const result = await pool.query('select id, email, display_name, password_hash from hidegames_users where email = $1', [email])
   return result.rows[0] ?? null
+}
+
+async function saveMatchResult(userId, { game, result, snapshot }) {
+  if (!pool) throw new Error('DATABASE_URL is not configured')
+  const saved = await pool.query(`insert into hidegames_match_results (user_id, game, result, snapshot)
+    values ($1, $2, $3, $4::jsonb) returning id, game, result, snapshot, created_at`, [userId, game, result, snapshot === undefined ? null : JSON.stringify(snapshot)])
+  return saved.rows[0]
+}
+
+async function listMatchResults(userId) {
+  if (!pool) return []
+  const saved = await pool.query(`select id, game, result, snapshot, created_at
+    from hidegames_match_results where user_id = $1 order by created_at desc limit 50`, [userId])
+  return saved.rows
+}
+
+async function listRankings(game) {
+  if (!pool) return []
+  const saved = await pool.query(`select u.display_name, count(*) filter (where m.result = 'win')::int as wins,
+    count(*)::int as matches
+    from hidegames_match_results m join hidegames_users u on u.id = m.user_id
+    where m.game = $1 group by u.id, u.display_name
+    order by wins desc, matches asc, min(m.created_at) asc limit 20`, [game])
+  return saved.rows
 }
 
 async function loadRoom(code) {
@@ -63,4 +97,4 @@ async function saveReport(report) {
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, saveMatchResult, listMatchResults, listRankings, enabled: Boolean(pool) }

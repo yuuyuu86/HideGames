@@ -11,6 +11,13 @@ const jwtSecret = process.env.AUTH_JWT_SECRET || null
 const distDirectory = path.resolve(__dirname, '..', 'dist')
 const sendJson = (response, status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }); response.end(JSON.stringify(body)) }
 const readJson = request => new Promise((resolve, reject) => { let body = ''; request.on('data', chunk => { body += chunk; if (body.length > 20_000) request.destroy() }); request.on('end', () => { try { resolve(body ? JSON.parse(body) : {}) } catch { reject(new Error('invalid JSON')) } }); request.on('error', reject) })
+function readAuthenticatedUser(request) {
+  if (!jwtSecret) return null
+  const match = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? '')
+  if (!match) return null
+  try { return jwt.verify(match[1], jwtSecret, { issuer: 'hidegames' }) }
+  catch { return null }
+}
 function serveStatic(request, response) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const pathname = new URL(request.url, 'http://localhost').pathname
@@ -25,14 +32,40 @@ function serveStatic(request, response) {
 async function handleHttp(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {})
   if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret) })
-  if (request.method !== 'POST' || !['/auth/signup', '/auth/login'].includes(request.url)) return serveStatic(request, response) || sendJson(response, 404, { error: 'Not found' })
+  const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/api/matches' || url.pathname === '/api/rankings') {
+    if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '記録サービスはまだ設定されていません' })
+    try {
+      if (url.pathname === '/api/matches' && request.method === 'GET') {
+        const user = readAuthenticatedUser(request)
+        if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+        return sendJson(response, 200, { matches: await database.listMatchResults(user.sub) })
+      }
+      if (url.pathname === '/api/matches' && request.method === 'POST') {
+        const user = readAuthenticatedUser(request)
+        if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+        const { game, result, snapshot } = await readJson(request)
+        if (typeof game !== 'string' || !game.trim() || game.length > 80 || !['win', 'loss', 'draw'].includes(result)) return sendJson(response, 400, { error: '戦績の内容が正しくありません' })
+        if (snapshot !== undefined && JSON.stringify(snapshot).length > 180_000) return sendJson(response, 413, { error: 'リプレイの記録が大きすぎます' })
+        const match = await database.saveMatchResult(user.sub, { game: game.trim(), result, snapshot })
+        return sendJson(response, 201, { match })
+      }
+      if (url.pathname === '/api/rankings' && request.method === 'GET') {
+        const game = url.searchParams.get('game')?.trim() ?? ''
+        if (!game || game.length > 80) return sendJson(response, 400, { error: 'ゲーム名を指定してください' })
+        return sendJson(response, 200, { rankings: await database.listRankings(game) })
+      }
+      return sendJson(response, 405, { error: 'Method not allowed' })
+    } catch (error) { console.error('Could not handle match API:', error.message); return sendJson(response, 500, { error: '記録の処理に失敗しました' }) }
+  }
+  if (request.method !== 'POST' || !['/auth/signup', '/auth/login'].includes(url.pathname)) return serveStatic(request, response) || sendJson(response, 404, { error: 'Not found' })
   if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '認証サービスはまだ設定されていません' })
   try {
     const { email: rawEmail, password, displayName } = await readJson(request)
     const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
     if (!/^\S+@\S+\.\S+$/.test(email) || typeof password !== 'string' || password.length < 8) return sendJson(response, 400, { error: 'メールアドレスと8文字以上のパスワードを入力してください' })
     let user
-    if (request.url === '/auth/signup') {
+    if (url.pathname === '/auth/signup') {
       const name = typeof displayName === 'string' ? displayName.trim().slice(0, 32) : ''
       if (!name) return sendJson(response, 400, { error: '表示名を入力してください' })
       user = await database.createUser({ email, passwordHash: await bcrypt.hash(password, 12), displayName: name })
