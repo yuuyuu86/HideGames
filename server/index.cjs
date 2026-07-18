@@ -103,6 +103,9 @@ const tagGems = [{ x: 3, y: 1 }, { x: 8, y: 2 }, { x: 6, y: 6 }, { x: 10, y: 4 }
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube', 'tournament'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
+const colorTurnGames = {
+  othello: ['b', 'w'], gomoku: ['black', 'white'], connect4: ['red', 'yellow'], shogi: ['b', 'w'], go: ['b', 'w'], chess: ['w', 'b'],
+}
 
 function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game === 'tag' || !nextState || typeof nextState !== 'object') return false
@@ -111,6 +114,11 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   const previous = room.gameState[game]
   if (!previous || typeof previous !== 'object') return isHost
   if (previous.winner || previous.loser || previous.lost) return isHost
+  const colors = colorTurnGames[game]
+  if (colors) {
+    const playerIndex = colors.indexOf(previous.turn)
+    return playerIndex >= 0 && room.members[playerIndex]?.id === senderId
+  }
   if (!playerTurnGames.has(game)) return true
   return typeof previous.turn !== 'string' || previous.turn === senderId
 }
