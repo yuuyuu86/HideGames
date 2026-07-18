@@ -103,6 +103,8 @@ async function handleHttp(request, response) {
     if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
     if (request.method !== 'PATCH') return sendJson(response, 405, { error: 'Method not allowed' })
     try {
+      const retryAfter = rateLimit('profile-write', user.sub, 10, 60_000)
+      if (retryAfter) return sendJson(response, 429, { error: 'プロフィール更新が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
       const { displayName } = await readJson(request)
       const name = typeof displayName === 'string' ? displayName.trim().slice(0, 32) : ''
       if (!name) return sendJson(response, 400, { error: '表示名を入力してください' })
