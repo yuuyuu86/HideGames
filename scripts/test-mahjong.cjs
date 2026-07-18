@@ -28,6 +28,11 @@ try {
   const openKanWin = evaluateMahjongWin(concealedKanHand, concealedKan, { winType: 'tsumo', riichi: true, meldOpen: [true] })
   assert(closedKanWin?.yaku.includes('リーチ') && closedKanWin.yaku.includes('門前清自摸和') && !openKanWin?.yaku.includes('リーチ') && !openKanWin?.yaku.includes('門前清自摸和'), '暗槓の門前判定が正しくありません')
 
+  const ippatsuHand = ['m1', 'm2', 'm3', 'm1', 'm2', 'm3', 'p1', 'p2', 'p3', 'p1', 'p2', 'p3', 's5', 's5'].map(tile)
+  const ippatsuWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', riichi: true, ippatsu: true })
+  const ordinaryRiichiWin = evaluateMahjongWin(ippatsuHand, [], { winType: 'tsumo', riichi: true, ippatsu: false })
+  assert(ippatsuWin?.yaku.includes('一発') && !ordinaryRiichiWin?.yaku.includes('一発'), '一発の判定が正しくありません')
+
   console.log('Mahjong scoring tests passed')
 } finally {
   fs.rmSync(outputDirectory, { recursive: true, force: true })
