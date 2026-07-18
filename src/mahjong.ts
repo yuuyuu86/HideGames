@@ -1,6 +1,7 @@
 export type MahjongTile = { suit: 'm' | 'p' | 's' | 'z'; rank: number }
 export type MahjongWinType = 'tsumo' | 'ron'
-export type MahjongWinInfo = { yaku: string[]; han: number; fu: number; points: number; limit?: string }
+export type MahjongPayment = { ron: { dealer: number; nonDealer: number }; tsumo: { dealerPays: number; nonDealerPays: number } }
+export type MahjongWinInfo = { yaku: string[]; han: number; fu: number; points: number; payments: MahjongPayment; limit?: string }
 export type MahjongWinOptions = {
   winType: MahjongWinType
   riichi?: boolean
@@ -127,7 +128,8 @@ function pointInfo(han: number, fu: number) {
   else if (han >= 8) { base = 4000; limit = '倍満' }
   else if (han >= 6) { base = 3000; limit = '跳満' }
   else if (han >= 5 || base >= 2000) { base = 2000; limit = '満貫' }
-  return { points: Math.ceil(base * 4 / 100) * 100, limit }
+  const round = (value: number) => Math.ceil(value / 100) * 100
+  return { points: round(base * 4), payments: { ron: { dealer: round(base * 6), nonDealer: round(base * 4) }, tsumo: { dealerPays: round(base * 2), nonDealerPays: round(base) } }, limit }
 }
 
 export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], options: MahjongWinOptions): MahjongWinInfo | null {
@@ -135,7 +137,7 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
   const counts = countTiles(hand)
   const sevenPairs = melds.length === 0 && counts.size === 7 && [...counts.values()].every(count => count === 2)
   const kokushi = melds.length === 0 && hand.length === 14 && terminalKeys.every(value => (counts.get(value) ?? 0) >= 1)
-  if (kokushi) return { yaku: ['国士無双'], han: 13, fu: 0, points: 32000, limit: '役満' }
+  if (kokushi) return { yaku: ['国士無双'], han: 13, fu: 0, ...pointInfo(13, 0) }
   const decompositions = sevenPairs ? [[]] : standardDecompositions(hand, melds)
   if (!decompositions.length) return null
   const closed = melds.length === 0
