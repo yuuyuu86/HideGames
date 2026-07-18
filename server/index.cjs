@@ -281,9 +281,13 @@ function broadcastRoom(code) {
 
 function tagState(room) {
   if (!room.gameState.tag) {
-    room.gameState.tag = { positions: {}, collected: [], keys: [], hunterId: room.members[0]?.id ?? null, winner: null }
+    room.gameState.tag = { positions: {}, collected: [], keys: [], caught: [], infected: [], mode: 'gems', remainingMoves: 120, hunterId: room.members[0]?.id ?? null, winner: null }
   }
   if (!Array.isArray(room.gameState.tag.keys)) room.gameState.tag.keys = []
+  if (!Array.isArray(room.gameState.tag.caught)) room.gameState.tag.caught = []
+  if (!Array.isArray(room.gameState.tag.infected)) room.gameState.tag.infected = [room.gameState.tag.hunterId].filter(Boolean)
+  if (!['gems', 'escape', 'classic', 'infection'].includes(room.gameState.tag.mode)) room.gameState.tag.mode = 'gems'
+  if (!Number.isInteger(room.gameState.tag.remainingMoves)) room.gameState.tag.remainingMoves = 120
   return room.gameState.tag
 }
 
@@ -392,7 +396,11 @@ io.on('connection', socket => {
     if (event.type === 'tag-move') {
       const state = tagState(room)
       const point = event.position
-      if (!state.winner && point && Number.isInteger(point.x) && Number.isInteger(point.y) && point.x >= 0 && point.x < 12 && point.y >= 0 && point.y < 8 && !tagWall(point.x, point.y)) {
+      const memberIndex = room.members.findIndex(member => member.id === socket.data.memberId)
+      const previousPoint = state.positions[socket.data.memberId] ?? { x: 1 + (Math.max(memberIndex, 0) % 3), y: 5 }
+      const adjacent = point && Math.abs(point.x - previousPoint.x) + Math.abs(point.y - previousPoint.y) === 1
+      const caughtPlayer = state.mode === 'classic' && state.caught.includes(socket.data.memberId)
+      if (!room.paused && !caughtPlayer && !state.winner && adjacent && point && Number.isInteger(point.x) && Number.isInteger(point.y) && point.x >= 0 && point.x < 12 && point.y >= 0 && point.y < 8 && !tagWall(point.x, point.y)) {
         const warp = tagWarps.find(item => item.from.x === point.x && item.from.y === point.y)
         state.positions[socket.data.memberId] = warp ? warp.to : point
         const currentPoint = state.positions[socket.data.memberId]
@@ -400,17 +408,27 @@ io.on('connection', socket => {
         if (gemIndex >= 0) state.collected.push(gemIndex)
         const keyIndex = tagKeys.findIndex((key, index) => !state.keys.includes(index) && key.x === currentPoint.x && key.y === currentPoint.y)
         if (keyIndex >= 0) state.keys.push(keyIndex)
-        const hunterPoint = state.positions[state.hunterId]
-        const caught = room.members.find(member => member.id !== state.hunterId && state.positions[member.id] && hunterPoint && state.positions[member.id].x === hunterPoint.x && state.positions[member.id].y === hunterPoint.y)
-        if (caught) state.winner = state.hunterId
-        if (state.collected.length === tagGems.length || (state.keys.length === tagKeys.length && currentPoint.x === tagExit.x && currentPoint.y === tagExit.y)) state.winner = 'runners'
+        if (socket.data.memberId !== state.hunterId) state.remainingMoves = Math.max(0, state.remainingMoves - 1)
+        const taggers = state.mode === 'infection' ? state.infected : [state.hunterId]
+        const caught = room.members.filter(member => !taggers.includes(member.id) && (state.mode !== 'classic' || !state.caught.includes(member.id)) && state.positions[member.id] && taggers.some(id => state.positions[id] && state.positions[id].x === state.positions[member.id].x && state.positions[id].y === state.positions[member.id].y))
+        if (caught.length && state.mode === 'infection') { state.infected.push(...caught.map(member => member.id)); if (state.infected.length === room.members.length) state.winner = 'infected' }
+        else if (caught.length && state.mode === 'classic') { state.caught.push(...caught.map(member => member.id)); if (state.caught.length >= room.members.length - 1) state.winner = state.hunterId }
+        else if (caught.length) state.winner = state.hunterId
+        if (state.mode === 'gems' && state.collected.length === tagGems.length) state.winner = 'runners'
+        if (state.mode === 'escape' && state.keys.length === tagKeys.length && currentPoint.x === tagExit.x && currentPoint.y === tagExit.y) state.winner = 'runners'
+        if ((state.mode === 'classic' || state.mode === 'infection') && state.remainingMoves === 0) state.winner = 'runners'
       }
+    }
+    if (event.type === 'tag-mode' && isHost && ['gems', 'escape', 'classic', 'infection'].includes(event.mode)) {
+      const state = tagState(room)
+      state.mode = event.mode; state.positions = Object.fromEntries(room.members.map((member, memberIndex) => [member.id, { x: 1 + (memberIndex % 3), y: 5 }])); state.collected = []; state.keys = []; state.caught = []; state.infected = event.mode === 'infection' ? [state.hunterId].filter(Boolean) : []; state.remainingMoves = 120; state.winner = null
     }
     if (event.type === 'tag-rematch') {
       const previous = tagState(room).hunterId
       const index = Math.max(0, room.members.findIndex(member => member.id === previous))
       const hunter = room.members.length ? room.members[(index + 1) % room.members.length].id : null
-      room.gameState.tag = { positions: Object.fromEntries(room.members.map((member, memberIndex) => [member.id, { x: 1 + (memberIndex % 3), y: 5 }])), collected: [], keys: [], hunterId: hunter, winner: null }
+      const mode = tagState(room).mode
+      room.gameState.tag = { positions: Object.fromEntries(room.members.map((member, memberIndex) => [member.id, { x: 1 + (memberIndex % 3), y: 5 }])), collected: [], keys: [], caught: [], infected: mode === 'infection' ? [hunter].filter(Boolean) : [], mode, remainingMoves: 120, hunterId: hunter, winner: null }
     }
     broadcastRoom(code)
   })

@@ -30,6 +30,7 @@ type Event =
   | { type: 'away'; id: string; away: boolean }
   | { type: 'resume-ready'; id: string; ready: boolean }
   | { type: 'game-state'; game: string; state: unknown }
+  | { type: 'tag-mode'; mode: 'gems' | 'escape' | 'classic' | 'infection' }
 
 const memberPalette: RoomMember[] = [
   { id: 'yuta', name: 'yuta', color: 'mint', ready: true, host: true },
@@ -76,6 +77,7 @@ export function useRoomSession() {
     if (event.type === 'away') setMembers(current => current.map(member => member.id === event.id ? { ...member, away: event.away } : member))
     if (event.type === 'resume-ready') setResume(current => ({ ...current, readyIds: event.ready ? [...new Set([...current.readyIds, event.id])] : current.readyIds.filter(id => id !== event.id) }))
     if (event.type === 'game-state') setGameState(current => ({ ...current, [event.game]: event.state }))
+    if (event.type === 'tag-mode') setGameState(current => ({ ...current, tag: { ...(current.tag as Record<string, unknown> | undefined), mode: event.mode, collected: [], keys: [], caught: [], infected: [], remainingMoves: 120, winner: null } }))
   }, [])
 
   useEffect(() => {
@@ -174,6 +176,10 @@ export function useRoomSession() {
     rematchTag: () => {
       if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-rematch' })
       else publish({ type: 'game-state', game: 'tag', state: { positions: {}, collected: [] } })
+    },
+    setTagMode: (mode: 'gems' | 'escape' | 'classic' | 'infection') => {
+      if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-mode', mode })
+      else publish({ type: 'tag-mode', mode })
     },
   }
 }
