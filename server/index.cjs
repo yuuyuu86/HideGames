@@ -590,6 +590,25 @@ io.on('connection', socket => {
     socket.to(code).emit('room:voice', { id: socket.data.memberId, joined })
   })
 
+  socket.on('room:invite', async ({ targetId }, ack = () => {}) => {
+    const code = socket.data.roomCode
+    const senderId = socket.data.user?.sub
+    if (!code || !senderId || typeof targetId !== 'string') return ack({ ok: false, message: 'ログイン済みの参加者のみ招待できます' })
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId)) return ack({ ok: false, message: '招待先が正しくありません' })
+    if (rateLimit('room-invite', senderId, 12, 60_000)) return ack({ ok: false, message: '招待の送信回数が多すぎます。少し待ってから再試行してください' })
+    const room = getRoom(code)
+    const sender = room.members.find(member => member.id === socket.data.memberId)
+    if (!sender || !await database.areFriends(senderId, targetId)) return ack({ ok: false, message: 'フレンドのみ招待できます' })
+    const invitation = { id: `${Date.now()}-${senderId}`, code, game: room.game, from: sender.name, at: Date.now() }
+    let delivered = false
+    for (const client of io.sockets.sockets.values()) {
+      if (client.data.user?.sub !== targetId) continue
+      client.emit('room:invite', invitation)
+      delivered = true
+    }
+    ack(delivered ? { ok: true } : { ok: false, message: 'フレンドは現在オフラインです' })
+  })
+
   socket.on('room:join-player', (ack = () => {}) => {
     const code = socket.data.roomCode
     if (!code || !socket.data.spectator) return ack({ ok: false, message: '観戦中の参加者のみ次のラウンドに参加できます' })

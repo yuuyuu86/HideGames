@@ -117,6 +117,12 @@ async function removeFriendship(userId, friendId) {
   return result.rowCount > 0
 }
 
+async function areFriends(userId, friendId) {
+  if (!pool) return false
+  const result = await pool.query('select 1 from hidegames_friendships where user_id = $1 and friend_id = $2', [userId, friendId])
+  return result.rowCount > 0
+}
+
 async function loadRoom(code) {
   if (!pool) return null
   const result = await pool.query('select state from hidegames_rooms where code = $1', [code])
@@ -145,4 +151,4 @@ async function saveReport(report) {
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, deleteRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, serializeRoom, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, deleteRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, areFriends, serializeRoom, enabled: Boolean(pool) }

@@ -23,6 +23,7 @@ export type AwayHistoryItem = { id: string; name: string; away: boolean; at: num
 export type ResumeState = { readyIds: string[]; startsAt?: number }
 export type VoiceEvent = { id: string; joined: boolean }
 export type GameStartEvent = { game: string; by: string; byId: string; at: number }
+export type RoomInvitation = { id: string; code: string; game: string; from: string; at: number }
 
 type Event =
   | { type: 'chat'; message: RoomMessage }
@@ -63,6 +64,7 @@ export function useRoomSession() {
   const [roomPassword, setRoomPassword] = useState(() => sessionStorage.getItem('hidegames.room-password') ?? '')
   const [roomError, setRoomError] = useState('')
   const [lastGameStart, setLastGameStart] = useState<GameStartEvent | null>(null)
+  const [invitations, setInvitations] = useState<RoomInvitation[]>([])
   const [authRevision, setAuthRevision] = useState(0)
   const channel = useRef<BroadcastChannel | null>(null)
   const socket = useRef<Socket | null>(null)
@@ -123,6 +125,7 @@ export function useRoomSession() {
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
     client.on('room:voice', (event) => { if (typeof event?.id === 'string' && typeof event.joined === 'boolean') voiceHandlers.current.forEach(handler => handler(event)) })
     client.on('room:game-start', (event) => { if (typeof event?.game === 'string' && typeof event?.by === 'string' && typeof event?.byId === 'string' && typeof event?.at === 'number') setLastGameStart(event) })
+    client.on('room:invite', (event) => { if (typeof event?.id === 'string' && typeof event?.code === 'string' && typeof event?.game === 'string' && typeof event?.from === 'string' && typeof event?.at === 'number') setInvitations(current => [event, ...current.filter(item => item.id !== event.id)].slice(0, 8)) })
     return () => { client.close() }
   }, [authRevision, localMember])
 
@@ -157,6 +160,7 @@ export function useRoomSession() {
     connected,
     roomError,
     lastGameStart,
+    invitations,
     localMember,
     roomCode,
     joinRoom: (rawCode: string, password = '', spectator = false) => {
@@ -184,6 +188,11 @@ export function useRoomSession() {
     toggleReady: () => publish({ type: 'ready', id: localMember.id, ready: !members.find(member => member.id === localMember.id)?.ready }),
     selectGame: (nextGame: string) => publish({ type: 'game', game: nextGame }),
     startGame: () => socket.current?.connected && socket.current.emit('room:event', { type: 'game-start' }),
+    inviteFriend: (targetId: string) => new Promise<{ ok: boolean; message?: string }>(resolve => {
+      if (!socket.current?.connected) return resolve({ ok: false, message: '接続を確認しています。少し待ってから再試行してください' })
+      socket.current.emit('room:invite', { targetId }, (result: { ok?: boolean; message?: string }) => resolve({ ok: Boolean(result?.ok), message: result?.message }))
+    }),
+    dismissInvitation: (id: string) => setInvitations(current => current.filter(invitation => invitation.id !== id)),
     setPaused: (nextPaused: boolean) => publish({ type: 'pause', paused: nextPaused }),
     setAway: (away: boolean) => publish({ type: 'away', id: localMember.id, away }),
     setResumeReady: (ready: boolean) => publish({ type: 'resume-ready', id: localMember.id, ready }),
