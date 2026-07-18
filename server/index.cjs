@@ -55,7 +55,19 @@ function serveStatic(request, response) {
 }
 async function handleHttp(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {})
-  if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret), uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), rooms: rooms.size, sockets: io.engine.clientsCount, release })
+  if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, {
+    ok: true,
+    persistence: database.enabled,
+    auth: Boolean(jwtSecret),
+    integrations: {
+      youtubeSearch: Boolean(youtubeApiKey),
+      turn: Boolean(turnUrl && turnUsername && turnCredential),
+    },
+    uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
+    rooms: rooms.size,
+    sockets: io.engine.clientsCount,
+    release,
+  })
   const url = new URL(request.url, 'http://localhost')
   if (url.pathname === '/api/rtc-config') {
     if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' })
