@@ -134,10 +134,15 @@ async function saveRoom(code, room) {
     on conflict (code) do update set state = excluded.state, updated_at = now()`, [code, JSON.stringify(serializable)])
 }
 
+async function deleteRoom(code) {
+  if (!pool) return
+  await pool.query('delete from hidegames_rooms where code = $1', [code])
+}
+
 async function saveReport(report) {
   if (!pool) return
   await pool.query(`insert into hidegames_reports (id, room_code, reporter_id, target_id, reason, created_at)
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, serializeRoom, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, deleteRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, serializeRoom, enabled: Boolean(pool) }

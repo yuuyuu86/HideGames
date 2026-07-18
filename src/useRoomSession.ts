@@ -184,6 +184,21 @@ export function useRoomSession() {
     setRoomPassword: (password: string) => socket.current?.connected && socket.current.emit('room:set-password', { password }),
     reportMember: (targetId: string, reason: string) => socket.current?.connected && socket.current.emit('room:report', { targetId, reason }),
     removeMember: (targetId: string) => socket.current?.connected && socket.current.emit('room:kick', { targetId }),
+    leaveRoom: () => new Promise<{ ok: boolean; message?: string }>(resolve => {
+      if (!socket.current?.connected) return resolve({ ok: false, message: '接続を確認しています。少し待ってから再試行してください' })
+      socket.current.emit('room:leave', (result: { ok?: boolean; message?: string }) => {
+        if (result?.ok) {
+          sessionStorage.removeItem('hidegames.spectator')
+          sessionStorage.removeItem('hidegames.room-password')
+          localStorage.removeItem('hidegames.room-code')
+          setMembers([localMember])
+          setSpectators([])
+          setMessages([])
+          setRoomCode('LOCAL01')
+        }
+        resolve({ ok: Boolean(result?.ok), message: result?.message })
+      })
+    }),
     sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => socket.current?.connected && socket.current.emit('room:signal', { target, data }),
     onSignal: (handler: (signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void) => { signalHandlers.current.add(handler); return () => signalHandlers.current.delete(handler) },
     announceVoice: (joined: boolean) => socket.current?.connected && socket.current.emit('room:voice', { joined }),

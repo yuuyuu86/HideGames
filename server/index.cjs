@@ -163,6 +163,7 @@ const io = new Server(server, { cors: { origin: true, methods: ['GET', 'POST'] }
 const rooms = new Map()
 const roomLoads = new Map()
 const roomSaves = new Map()
+const roomDeletes = new Map()
 const reports = []
 const disconnectTimers = new Map()
 const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
@@ -298,6 +299,8 @@ function getRoom(code) {
 }
 
 async function hydrateRoom(code) {
+  const deleting = roomDeletes.get(code)
+  if (deleting) await deleting
   if (rooms.has(code)) return rooms.get(code)
   if (roomLoads.has(code)) return roomLoads.get(code)
   const load = (async () => {
@@ -328,6 +331,19 @@ function broadcastRoom(code) {
   const save = previous.catch(() => undefined).then(() => database.saveRoom(code, snapshot))
   roomSaves.set(code, save)
   save.catch(error => console.error('Could not save room to database:', error.message)).finally(() => { if (roomSaves.get(code) === save) roomSaves.delete(code) })
+}
+
+async function removeRoom(code) {
+  rooms.delete(code)
+  const previous = roomSaves.get(code) ?? Promise.resolve()
+  const deletion = previous.catch(() => undefined).then(() => database.deleteRoom(code))
+  roomDeletes.set(code, deletion)
+  try {
+    await deletion
+  } finally {
+    if (roomDeletes.get(code) === deletion) roomDeletes.delete(code)
+    if (roomSaves.get(code) === previous) roomSaves.delete(code)
+  }
 }
 
 function tagState(room) {
@@ -385,7 +401,7 @@ io.on('connection', socket => {
         if (previousRoom.members.length) {
           normalizeHosts(previousRoom)
           if (wasHost) announceHostTransfer(previousRoom, previousRoom.members[0])
-        } else rooms.delete(previousCode)
+        } else await removeRoom(previousCode)
       }
       socket.leave(previousCode)
       delete socket.data.roomCode
@@ -612,6 +628,34 @@ io.on('connection', socket => {
     broadcastRoom(code)
   })
 
+  socket.on('room:leave', async (ack = () => {}) => {
+    const code = socket.data.roomCode
+    const memberId = socket.data.memberId
+    if (!code || !memberId) return ack({ ok: false, message: '参加中のルームが見つかりません' })
+    const room = getRoom(code)
+    cancelPendingDisconnect(code, memberId)
+    if (socket.data.spectator) room.spectators = (room.spectators ?? []).filter(member => member.id !== memberId)
+    else {
+      const wasHost = room.members[0]?.id === memberId
+      room.members = room.members.filter(member => member.id !== memberId)
+      room.resume = { readyIds: room.resume.readyIds.filter(id => id !== memberId) }
+      if (room.members.length) {
+        normalizeHosts(room)
+        if (wasHost) announceHostTransfer(room, room.members[0])
+      }
+    }
+    socket.leave(code)
+    delete socket.data.roomCode
+    delete socket.data.memberId
+    delete socket.data.spectator
+    if (room.members.length || (room.spectators?.length ?? 0)) broadcastRoom(code)
+    else {
+      try { await removeRoom(code) }
+      catch (error) { console.error('Could not delete room from database:', error.message) }
+    }
+    ack({ ok: true })
+  })
+
   socket.on('disconnect', () => {
     clearRateLimit('socket-event', socket.id)
     clearRateLimit('socket-signal', socket.id)
@@ -628,7 +672,7 @@ io.on('connection', socket => {
     broadcastRoom(code)
     const key = disconnectKey(code, memberId)
     cancelPendingDisconnect(code, memberId)
-    disconnectTimers.set(key, setTimeout(() => {
+    disconnectTimers.set(key, setTimeout(async () => {
       disconnectTimers.delete(key)
       const current = rooms.get(code)
       const stillDisconnected = current?.members.find(item => item.id === memberId && item.connected === false)
@@ -636,7 +680,10 @@ io.on('connection', socket => {
       const wasHost = current.members[0]?.id === memberId
       current.members = current.members.filter(item => item.id !== memberId)
       current.resume = { readyIds: current.resume.readyIds.filter(id => id !== memberId) }
-      if (current.members.length === 0) rooms.delete(code)
+      if (current.members.length === 0) {
+        try { await removeRoom(code) }
+        catch (error) { console.error('Could not delete room from database:', error.message) }
+      }
       else {
         normalizeHosts(current)
         if (wasHost) announceHostTransfer(current, current.members[0])
