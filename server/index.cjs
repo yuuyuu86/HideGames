@@ -447,6 +447,9 @@ io.on('connection', socket => {
       room.messages = [...room.messages.slice(-99), { ...event.message, id: `${Date.now()}-${socket.data.memberId}`, name: sender.name, tone: sender.color, text: event.message.text.trim() }]
     }
     if (socket.data.spectator && event.type !== 'chat') return broadcastRoom(code)
+    // Pausing is a room-wide safety boundary, not merely a disabled UI state.
+    // Do not accept raw game updates while somebody is away.
+    if (room.paused && ['game-state', 'tag-move', 'tag-mode', 'tag-rematch'].includes(event.type)) return broadcastRoom(code)
     if (event.type === 'ready' && event.id === socket.data.memberId) room.members = room.members.map(member => member.id === event.id ? { ...member, ready: Boolean(event.ready) } : member)
     if (event.type === 'game') {
       if (!isHost || typeof event.game !== 'string' || !roomGames.has(event.game)) return broadcastRoom(code)
