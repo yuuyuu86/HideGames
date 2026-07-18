@@ -526,9 +526,9 @@ function TetrisGame({ paused, sharedState, syncState, members, playerId }: { pau
     else if(canPlace(me.board,{...landed,y:landed.y+1})){publish({...me,active:{...landed,y:landed.y+1}});return}
     const settled=me.board.map(row=>[...row]);shapeCells(landed).forEach(cell=>{if(cell.y>=0)settled[cell.y][cell.x]=cell.value})
     const kept=settled.filter(row=>row.some(cell=>!cell));const cleared=16-kept.length;while(kept.length<16)kept.unshift(Array<Block>(10).fill(0))
-    const garbage=Math.min(me.pendingGarbage,4);const overflow=garbage>0&&kept.slice(0,garbage).some(row=>row.some(Boolean));const raised=garbage?[...kept.slice(garbage),...Array.from({length:garbage},(_,index)=>Array.from({length:10},(_,x)=>x===((me.seed+index*3)%10)?0:6 as Block))]:kept
+    const cancelled=Math.min(me.pendingGarbage,cleared);const garbage=Math.min(me.pendingGarbage-cancelled,4);const overflow=garbage>0&&kept.slice(0,garbage).some(row=>row.some(Boolean));const raised=garbage?[...kept.slice(garbage),...Array.from({length:garbage},(_,index)=>Array.from({length:10},(_,x)=>x===((me.seed+index*3)%10)?0:6 as Block))]:kept
     const nextActive={x:3,y:0,shape:(me.seed+1)%tetrominoes.length,rot:0};const nextMe={board:raised,active:nextActive,score:me.score+cleared,pendingGarbage:0,seed:me.seed+1,lost:overflow||!canPlace(raised,nextActive)}
-    publish(nextMe,Math.max(0,cleared-1))
+    publish(nextMe,Math.max(0,cleared-cancelled-1))
   }
   const move=(dx:number,rotation=0)=>{if(!me||paused||state.finished||me.lost)return;const next={...me.active,x:me.active.x+dx,rot:me.active.rot+rotation};if(canPlace(me.board,next))publish({...me,active:next})}
   useEffect(()=>{if(!me||paused||state.finished||me.lost)return;const timer=window.setInterval(()=>lock(),850);return()=>window.clearInterval(timer)},[me,paused,state.finished])
