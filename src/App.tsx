@@ -156,7 +156,8 @@ function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomM
   const close = () => { peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => { audio.pause();audio.remove() }); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
   const peer = (target: string) => {
     const existing = peers.current.get(target); if (existing) return existing
-    const connection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+    const turnUrl=import.meta.env.VITE_TURN_URL;const turnUser=import.meta.env.VITE_TURN_USERNAME;const turnCredential=import.meta.env.VITE_TURN_CREDENTIAL
+    const connection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turnUrl&&turnUser&&turnCredential?[{urls:turnUrl,username:turnUser,credential:turnCredential}]:[])] })
     stream.current?.getTracks().forEach(track => connection.addTrack(track, stream.current!))
     connection.onicecandidate = event => { if (event.candidate) sendSignal(target, event.candidate.toJSON()) }
     connection.ontrack = event => { const audio = new Audio(); audio.autoplay = true; audio.volume=volume/100; audio.srcObject = event.streams[0]; audios.current.set(target, audio); void audio.play().catch(() => undefined) }
