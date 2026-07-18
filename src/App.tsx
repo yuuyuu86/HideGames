@@ -99,8 +99,19 @@ function Sidebar({ page, setPage, unread, player }: { page: Page; setPage: (p: P
 function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; addMessage: (text: string) => void; paused: boolean }) {
   const [open, setOpen] = useState(true)
   const [text, setText] = useState('')
+  const notifiedCount = useRef(messages.length)
   const [visible, setVisible] = useState(() => { try { return JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false } catch { return true } })
   useEffect(() => { const refresh = () => { try { setVisible(JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false) } catch { setVisible(true) } }; window.addEventListener('hidegames-preferences', refresh); return () => window.removeEventListener('hidegames-preferences', refresh) }, [])
+  useEffect(() => {
+    const previous = notifiedCount.current
+    notifiedCount.current = messages.length
+    if (messages.length <= previous || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return
+    try {
+      const prefs = JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}') as { notifications?: boolean }
+      const latest = messages.at(-1)
+      if (prefs.notifications !== false && latest) new Notification(`HideGames - ${latest.name}`, { body: latest.text })
+    } catch { /* Notification failure must not affect chat. */ }
+  }, [messages])
   const submit = (e: React.FormEvent) => { e.preventDefault(); if (text.trim()) { addMessage(text.trim()); setText('') } }
   if (!visible) return null
   return <section className={`chat-dock ${open ? 'expanded' : ''}`} aria-label="ゲームチャット">
