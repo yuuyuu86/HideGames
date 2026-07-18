@@ -235,6 +235,15 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   return typeof previous.turn !== 'string' || previous.turn === senderId
 }
 
+function hasOnlySafeExternalLinks(state) {
+  if (!Object.hasOwn(state, 'links')) return true
+  if (!Array.isArray(state.links) || state.links.length > 12) return false
+  return state.links.every(link => {
+    if (!link || typeof link.url !== 'string' || typeof link.label !== 'string' || link.url.length > 2000 || link.label.length > 120) return false
+    try { return ['http:', 'https:'].includes(new URL(link.url).protocol) } catch { return false }
+  })
+}
+
 function blankRoom() {
   return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], resume: { readyIds: [] }, access: { passwordHash: null } }
 }
@@ -393,6 +402,7 @@ io.on('connection', socket => {
     }
     if (event.type === 'game-state' && typeof event.game === 'string' && event.game.length <= 40 && event.state && JSON.stringify(event.state).length <= 200000) {
       if (!canUpdateGameState(room, event.game, event.state, socket.data.memberId, isHost)) return broadcastRoom(code)
+      if (event.game === 'youtube' && !hasOnlySafeExternalLinks(event.state)) return broadcastRoom(code)
       room.gameState[event.game] = event.state
     }
     if (event.type === 'tag-move') {
