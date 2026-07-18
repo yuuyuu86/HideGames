@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test:mahjong": "node scripts/test-mahjong.cjs",
+    "test:catalog": "node scripts/test-game-catalog.cjs",
+    "test": "npm run test:catalog && npm run test:mahjong",
     "preview": "vite preview",
     "desktop": "node scripts/start-desktop.cjs",
     "server": "node --env-file-if-exists=.env.local server/index.cjs",
