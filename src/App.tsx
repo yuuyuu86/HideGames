@@ -148,7 +148,7 @@ function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomM
   return <section className="voice-dock"><button className={`voice-main ${active ? 'active' : ''}`} onClick={active ? close : join}>{active ? <Mic size={15}/> : <MicOff size={15}/>}<span>{active ? 'ボイス参加中' : 'ボイスに参加'}</span></button>{active && <button className="voice-mute" onClick={()=>{const next=!muted;stream.current?.getAudioTracks().forEach(track=>track.enabled=!next);setMuted(next)}} aria-label="マイクをミュート">{muted?<MicOff size={15}/>:<Mic size={15}/>}</button>}<small>{status}</small></section>
 }
 
-function PauseOverlay({ awayNames, resume, playerId, memberCount, onReady }: { awayNames: string[]; resume: { readyIds: string[]; startsAt?: number }; playerId: string; memberCount: number; onReady: (ready: boolean) => void }) {
+function PauseOverlay({ awayNames, resume, playerId, memberCount, onReady, sendMessage }: { awayNames: string[]; resume: { readyIds: string[]; startsAt?: number }; playerId: string; memberCount: number; onReady: (ready: boolean) => void; sendMessage: (message: string) => void }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => { if (!resume.startsAt) return; const timer = window.setInterval(() => setNow(Date.now()), 100); return () => window.clearInterval(timer) }, [resume.startsAt])
   const count = resume.startsAt ? Math.max(0, Math.ceil((resume.startsAt - now) / 1000)) : null
@@ -157,7 +157,7 @@ function PauseOverlay({ awayNames, resume, playerId, memberCount, onReady }: { a
   return <div className="pause-overlay" role="dialog" aria-modal="true">
     <div className="pause-card">
       <div className="pause-icon"><Pause size={32} fill="currentColor" /></div>
-      {count !== null ? <><p className="eyebrow">全員の準備ができました</p><h2>{count || '再開！'}</h2><p>全員の画面で同時にゲームを再開します</p></> : <><p className="eyebrow">ゲームは一時停止中です</p><h2>{awayNames.length ? `${awayNames.join('、')} さんが一時的に離席しています` : 'ゲームを一時停止しています'}</h2><p>戻るまでお待ちください。待機中もチャットできます。</p>{awayNames.length === 0 && <div className="pause-status"><span className="status-dot" />全員が戻りました。{resume.readyIds.length} / {memberCount} 人が準備OKです</div>}<button className="primary wide" disabled={awayNames.length > 0 || allReady} onClick={() => onReady(!ready)}><Play size={17} fill="currentColor" />{awayNames.length ? '全員の復帰を待っています' : allReady ? '再開を準備しています' : ready ? '準備OKを取り消す' : '準備OKにする'}</button></>}
+      {count !== null ? <><p className="eyebrow">全員の準備ができました</p><h2>{count || '再開！'}</h2><p>全員の画面で同時にゲームを再開します</p></> : <><p className="eyebrow">ゲームは一時停止中です</p><h2>{awayNames.length ? `${awayNames.join('、')} さんが一時的に離席しています` : 'ゲームを一時停止しています'}</h2><p>戻るまでお待ちください。待機中もチャットできます。</p><div className="pause-status"><button className="secondary" onClick={()=>sendMessage('すぐ戻ります')}>すぐ戻る</button><button className="secondary" onClick={()=>sendMessage('少し待ってください')}>少し待って</button></div>{awayNames.length === 0 && <div className="pause-status"><span className="status-dot" />全員が戻りました。{resume.readyIds.length} / {memberCount} 人が準備OKです</div>}<button className="primary wide" disabled={awayNames.length > 0 || allReady} onClick={() => onReady(!ready)}><Play size={17} fill="currentColor" />{awayNames.length ? '全員の復帰を待っています' : allReady ? '再開を準備しています' : ready ? '準備OKを取り消す' : '準備OKにする'}</button></>}
     </div>
   </div>
 }
@@ -645,7 +645,7 @@ function App() {
     </main>
     {(page === 'play' || page === 'room') && <ChatDock messages={room.messages} addMessage={room.sendChat} paused={room.paused} />}
     {(page === 'play' || page === 'room') && <VoiceChat members={room.members} playerId={room.localMember.id} sendSignal={room.sendSignal} onSignal={room.onSignal} />}
-    {room.paused && <PauseOverlay awayNames={room.members.filter(member => member.away).map(member => member.name)} resume={room.resume} playerId={room.localMember.id} memberCount={room.members.length} onReady={room.setResumeReady} />}
+    {room.paused && <PauseOverlay awayNames={room.members.filter(member => member.away).map(member => member.name)} resume={room.resume} playerId={room.localMember.id} memberCount={room.members.length} onReady={room.setResumeReady} sendMessage={room.sendChat} />}
     {showShortcut && <div className="shortcut-toast"><MonitorDown size={16} />離席モードを開始しました</div>}
   </div>
 }
