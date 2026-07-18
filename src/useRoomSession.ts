@@ -88,7 +88,7 @@ export function useRoomSession() {
   useEffect(() => {
     const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     const url = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
-    const client = io(url, { autoConnect: true, reconnectionAttempts: 3, timeout: 2000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
+    const client = io(url, { autoConnect: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 10_000, timeout: 5000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
     socket.current = client
     client.on('connect', () => { setConnected(true); client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword }) })
     client.on('disconnect', () => setConnected(false))
