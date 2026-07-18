@@ -102,6 +102,7 @@ function ChatDock({ messages, addMessage, paused }: { messages: ChatMessage[]; a
   const notifiedCount = useRef(messages.length)
   const [visible, setVisible] = useState(() => { try { return JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false } catch { return true } })
   useEffect(() => { const refresh = () => { try { setVisible(JSON.parse(localStorage.getItem('hidegames.preferences') ?? '{}').chat !== false) } catch { setVisible(true) } }; window.addEventListener('hidegames-preferences', refresh); return () => window.removeEventListener('hidegames-preferences', refresh) }, [])
+  useEffect(() => { const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && open) { event.preventDefault(); setOpen(false) } }; window.addEventListener('keydown', closeOnEscape); return () => window.removeEventListener('keydown', closeOnEscape) }, [open])
   useEffect(() => {
     const previous = notifiedCount.current
     notifiedCount.current = messages.length
