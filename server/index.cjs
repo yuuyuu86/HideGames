@@ -181,6 +181,7 @@ const gamePlayerLimits = {
   tag: [2, 8], othello: [2, 2], gomoku: [2, 2], connect4: [2, 2], shiritori: [2, 8], escape: [2, 2], future: [2, 5], werewolf: [4, 12], shogi: [2, 2], chess: [2, 2], go: [2, 2], daifugo: [2, 6], uno: [2, 8], oldmaid: [2, 6], memory: [2, 4], sevens: [2, 6], mahjong: [2, 4], sugoroku: [2, 6], mines: [1, 4], tetris: [2, 2], puzzle: [1, 4], wordwolf: [3, 10], quiz: [2, 10], drawrelay: [3, 10], association: [2, 10], delivery: [2, 4], newsroom: [3, 6], alien: [2, 5], museum: [2, 5], thief: [2, 5], orchestra: [2, 6], guard: [2, 6], sports: [2, 8], movie: [3, 8], meeting: [3, 8], election: [3, 8], story: [3, 8], letter: [2, 6], ghost: [2, 4], soundmaze: [2, 4], detective: [1, 4], court: [3, 8], bug: [1, 4],
 }
 const maxPlayersFor = game => gamePlayerLimits[game]?.[1] ?? 8
+const minPlayersFor = game => gamePlayerLimits[game]?.[0] ?? 1
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
 const colorTurnGames = {
@@ -476,6 +477,11 @@ io.on('connection', socket => {
           if (memberIndex >= 0) client.emit('room:private', { game: event.game, state: { role: roles[memberIndex % roles.length], word: event.game === 'wordwolf' ? (memberIndex % roles.length === 0 ? '紅茶' : 'コーヒー') : undefined } })
         }
       }
+    }
+    if (event.type === 'game-start') {
+      const everyoneReady = room.members.length > 0 && room.members.every(member => member.ready && member.connected !== false)
+      if (!isHost || room.paused || room.members.length < minPlayersFor(room.game) || room.members.length > maxPlayersFor(room.game) || !everyoneReady) return broadcastRoom(code)
+      io.to(code).emit('room:game-start', { game: room.game, by: sender.name, byId: sender.id, at: Date.now() })
     }
     if (event.type === 'pause') {
       if (!isHost) return broadcastRoom(code)

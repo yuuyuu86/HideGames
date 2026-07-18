@@ -22,6 +22,7 @@ export type RoomMessage = {
 export type AwayHistoryItem = { id: string; name: string; away: boolean; at: number }
 export type ResumeState = { readyIds: string[]; startsAt?: number }
 export type VoiceEvent = { id: string; joined: boolean }
+export type GameStartEvent = { game: string; by: string; byId: string; at: number }
 
 type Event =
   | { type: 'chat'; message: RoomMessage }
@@ -61,6 +62,7 @@ export function useRoomSession() {
   const [connected, setConnected] = useState(false)
   const [roomPassword, setRoomPassword] = useState(() => sessionStorage.getItem('hidegames.room-password') ?? '')
   const [roomError, setRoomError] = useState('')
+  const [lastGameStart, setLastGameStart] = useState<GameStartEvent | null>(null)
   const [authRevision, setAuthRevision] = useState(0)
   const channel = useRef<BroadcastChannel | null>(null)
   const socket = useRef<Socket | null>(null)
@@ -120,6 +122,7 @@ export function useRoomSession() {
     client.on('room:private', ({ game, state }) => { if (typeof game === 'string') setPrivateState(current => ({ ...current, [game]: state })) })
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
     client.on('room:voice', (event) => { if (typeof event?.id === 'string' && typeof event.joined === 'boolean') voiceHandlers.current.forEach(handler => handler(event)) })
+    client.on('room:game-start', (event) => { if (typeof event?.game === 'string' && typeof event?.by === 'string' && typeof event?.byId === 'string' && typeof event?.at === 'number') setLastGameStart(event) })
     return () => { client.close() }
   }, [authRevision, localMember])
 
@@ -153,6 +156,7 @@ export function useRoomSession() {
     roomLocked,
     connected,
     roomError,
+    lastGameStart,
     localMember,
     roomCode,
     joinRoom: (rawCode: string, password = '', spectator = false) => {
@@ -179,6 +183,7 @@ export function useRoomSession() {
     sendChat,
     toggleReady: () => publish({ type: 'ready', id: localMember.id, ready: !members.find(member => member.id === localMember.id)?.ready }),
     selectGame: (nextGame: string) => publish({ type: 'game', game: nextGame }),
+    startGame: () => socket.current?.connected && socket.current.emit('room:event', { type: 'game-start' }),
     setPaused: (nextPaused: boolean) => publish({ type: 'pause', paused: nextPaused }),
     setAway: (away: boolean) => publish({ type: 'away', id: localMember.id, away }),
     setResumeReady: (ready: boolean) => publish({ type: 'resume-ready', id: localMember.id, ready }),
