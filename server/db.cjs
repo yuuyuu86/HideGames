@@ -84,9 +84,13 @@ async function loadRoom(code) {
   return result.rows[0]?.state ?? null
 }
 
+function serializeRoom(room) {
+  return { ...room, members: [], resume: { readyIds: [] }, access: { passwordHash: room.access?.passwordHash ?? null } }
+}
+
 async function saveRoom(code, room) {
   if (!pool) return
-  const serializable = { ...room, access: { passwordHash: room.access?.passwordHash ?? null } }
+  const serializable = serializeRoom(room)
   await pool.query(`insert into hidegames_rooms (code, state) values ($1, $2::jsonb)
     on conflict (code) do update set state = excluded.state, updated_at = now()`, [code, JSON.stringify(serializable)])
 }
@@ -97,4 +101,4 @@ async function saveReport(report) {
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, saveMatchResult, listMatchResults, listRankings, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, saveMatchResult, listMatchResults, listRankings, serializeRoom, enabled: Boolean(pool) }
