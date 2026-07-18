@@ -161,6 +161,7 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (!previous || typeof previous !== 'object') return isHost
   if (previous.winner || previous.loser || previous.lost || previous.draw) return isHost
   if (game === 'mahjong' && nextState.winner === senderId && nextState.winType === 'ron' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId) return true
+  if (game === 'mahjong' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId && nextState.turn === senderId && (nextState.melds?.[senderId]?.length ?? 0) > (previous.melds?.[senderId]?.length ?? 0)) return true
   const colors = colorTurnGames[game]
   if (colors) {
     const playerIndex = colors.indexOf(previous.turn)
