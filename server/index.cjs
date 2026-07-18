@@ -356,6 +356,26 @@ io.on('connection', socket => {
     socket.emit('room:report-ack')
   })
 
+  socket.on('room:kick', ({ targetId }) => {
+    const code = socket.data.roomCode
+    if (!code || typeof targetId !== 'string') return
+    const room = getRoom(code)
+    if (room.members[0]?.id !== socket.data.memberId || targetId === socket.data.memberId) return
+    const target = room.members.find(member => member.id === targetId)
+    if (!target) return
+    cancelPendingDisconnect(code, targetId)
+    room.members = room.members.filter(member => member.id !== targetId)
+    normalizeHosts(room)
+    for (const client of io.sockets.sockets.values()) {
+      if (client.data.roomCode !== code || client.data.memberId !== targetId) continue
+      client.leave(code)
+      delete client.data.roomCode
+      delete client.data.memberId
+      client.emit('room:error', { message: 'ホストによりルームから退出しました' })
+    }
+    broadcastRoom(code)
+  })
+
   socket.on('disconnect', () => {
     clearRateLimit('socket-event', socket.id)
     clearRateLimit('socket-signal', socket.id)

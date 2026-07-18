@@ -156,6 +156,7 @@ export function useRoomSession() {
     setGameState: (game: string, state: unknown) => publish({ type: 'game-state', game, state }),
     setRoomPassword: (password: string) => socket.current?.connected && socket.current.emit('room:set-password', { password }),
     reportMember: (targetId: string, reason: string) => socket.current?.connected && socket.current.emit('room:report', { targetId, reason }),
+    removeMember: (targetId: string) => socket.current?.connected && socket.current.emit('room:kick', { targetId }),
     sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => socket.current?.connected && socket.current.emit('room:signal', { target, data }),
     onSignal: (handler: (signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void) => { signalHandlers.current.add(handler); return () => signalHandlers.current.delete(handler) },
     moveTag: (position: { x: number; y: number }) => {
