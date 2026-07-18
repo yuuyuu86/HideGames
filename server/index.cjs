@@ -84,6 +84,19 @@ const rooms = new Map()
 const reports = []
 const tagGems = [{ x: 3, y: 1 }, { x: 8, y: 2 }, { x: 6, y: 6 }, { x: 10, y: 4 }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
+const sharedStateGames = new Set(['memo', 'drawing', 'youtube', 'tournament'])
+const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
+
+function canUpdateGameState(room, game, nextState, senderId, isHost) {
+  if (game === 'tag' || !nextState || typeof nextState !== 'object') return false
+  if (sharedStateGames.has(game)) return true
+  if (game !== room.game) return false
+  const previous = room.gameState[game]
+  if (!previous || typeof previous !== 'object') return isHost
+  if (previous.winner || previous.loser || previous.lost) return isHost
+  if (!playerTurnGames.has(game)) return true
+  return typeof previous.turn !== 'string' || previous.turn === senderId
+}
 
 function blankRoom() {
   return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], resume: { readyIds: [] }, access: { passwordHash: null } }
@@ -206,7 +219,10 @@ io.on('connection', socket => {
         }, 3050)
       }
     }
-    if (event.type === 'game-state' && typeof event.game === 'string' && event.game.length <= 40 && event.state && JSON.stringify(event.state).length <= 200000) room.gameState[event.game] = event.state
+    if (event.type === 'game-state' && typeof event.game === 'string' && event.game.length <= 40 && event.state && JSON.stringify(event.state).length <= 200000) {
+      if (!canUpdateGameState(room, event.game, event.state, socket.data.memberId, isHost)) return broadcastRoom(code)
+      room.gameState[event.game] = event.state
+    }
     if (event.type === 'tag-move') {
       const state = tagState(room)
       const point = event.position
