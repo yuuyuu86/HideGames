@@ -186,6 +186,13 @@ export function useRoomSession() {
     onSignal: (handler: (signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void) => { signalHandlers.current.add(handler); return () => signalHandlers.current.delete(handler) },
     announceVoice: (joined: boolean) => socket.current?.connected && socket.current.emit('room:voice', { joined }),
     onVoice: (handler: (event: VoiceEvent) => void) => { voiceHandlers.current.add(handler); return () => voiceHandlers.current.delete(handler) },
+    promoteSpectator: () => new Promise<{ ok: boolean; message?: string }>(resolve => {
+      if (!socket.current?.connected) return resolve({ ok: false, message: '接続を確認しています。少し待ってから再試行してください' })
+      socket.current.emit('room:join-player', (result: { ok?: boolean; message?: string }) => {
+        if (result?.ok) sessionStorage.setItem('hidegames.spectator', 'false')
+        resolve({ ok: Boolean(result?.ok), message: result?.message })
+      })
+    }),
     moveTag: (position: { x: number; y: number }) => {
       if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-move', position })
       else publish({ type: 'game-state', game: 'tag', state: { positions: { [localMember.id]: position }, collected: [] } })

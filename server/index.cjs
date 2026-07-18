@@ -267,6 +267,12 @@ function blankRoom() {
   return { members: [], spectators: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null } }
 }
 
+function gameRoundFinished(room) {
+  const state = room.gameState?.[room.game]
+  if (!state || typeof state !== 'object') return false
+  return Boolean(state.draw || state.finished || state.lost || state.loser || (Object.hasOwn(state, 'winner') && state.winner !== null && state.winner !== undefined))
+}
+
 function normalizeHosts(room) {
   room.members = room.members.map((member, index) => ({ ...member, host: index === 0 }))
 }
@@ -524,6 +530,22 @@ io.on('connection', socket => {
     const room = getRoom(code)
     if (!room.members.some(member => member.id === socket.data.memberId)) return
     socket.to(code).emit('room:voice', { id: socket.data.memberId, joined })
+  })
+
+  socket.on('room:join-player', (ack = () => {}) => {
+    const code = socket.data.roomCode
+    if (!code || !socket.data.spectator) return ack({ ok: false, message: '観戦中の参加者のみ次のラウンドに参加できます' })
+    const room = getRoom(code)
+    const spectator = (room.spectators ?? []).find(member => member.id === socket.data.memberId)
+    if (!spectator) return ack({ ok: false, message: '観戦者情報が見つかりません' })
+    if (room.members.length >= 8) return ack({ ok: false, message: 'このルームは8人までです' })
+    if (!gameRoundFinished(room)) return ack({ ok: false, message: 'このラウンドの終了後に参加できます' })
+    room.spectators = room.spectators.filter(member => member.id !== spectator.id)
+    room.members.push({ ...spectator, ready: false, connected: true })
+    socket.data.spectator = false
+    normalizeHosts(room)
+    broadcastRoom(code)
+    ack({ ok: true })
   })
 
   socket.on('room:set-password', async ({ password }) => {
