@@ -129,7 +129,7 @@ const disconnectTimers = new Map()
 const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
 const tagGems = [{ x: 3, y: 1 }, { x: 8, y: 2 }, { x: 6, y: 6 }, { x: 10, y: 4 }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
-const sharedStateGames = new Set(['memo', 'drawing', 'youtube', 'tournament'])
+const sharedStateGames = new Set(['memo', 'drawing', 'youtube'])
 const playerTurnGames = new Set(['oldmaid', 'uno', 'daifugo', 'sevens', 'mahjong', 'tetris', 'puzzle', 'memory', 'sugoroku', 'shiritori'])
 const colorTurnGames = {
   othello: ['b', 'w'], gomoku: ['black', 'white'], connect4: ['red', 'yellow'], shogi: ['b', 'w'], go: ['b', 'w'], chess: ['w', 'b'],
@@ -137,6 +137,7 @@ const colorTurnGames = {
 
 function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game === 'tag' || !nextState || typeof nextState !== 'object') return false
+  if (game === 'tournament') return isHost
   if (sharedStateGames.has(game)) return true
   if (game !== room.game) return false
   const previous = room.gameState[game]
