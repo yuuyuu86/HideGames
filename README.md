@@ -15,6 +15,15 @@ npm run dev
 npm run desktop
 ```
 
+`EADDRINUSE: address already in use :::3001` と表示された場合は、以前のリアルタイムサーバーが残っています。まず確認し、表示されたPIDだけを停止してから再実行してください。
+
+```bash
+lsof -nP -iTCP:3001 -sTCP:LISTEN
+kill <PID>
+```
+
+`kill` の対象は上の確認結果に表示された `node server/index.cjs` のPIDに限定してください。
+
 デスクトップ版では `Ctrl/Cmd + Shift + H` でウィンドウを非表示にし、同じキーで再表示できます。
 
 ブラウザ版だけをリアルタイムサーバーと起動する場合は、次を実行します。
