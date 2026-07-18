@@ -162,14 +162,20 @@ function PauseOverlay({ awayNames, resume, playerId, memberCount, onReady }: { a
 }
 
 function Othello({ paused, sharedState, syncState }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void }) {
+  type State = { board?: (string | null)[][]; turn?: 'b' | 'w'; winner?: 'b' | 'w' | null; finished?: boolean }
   const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
   const fresh = () => { const b = Array.from({ length: 8 }, () => Array<string | null>(8).fill(null)); b[3][3]='w'; b[3][4]='b'; b[4][3]='b'; b[4][4]='w'; return b }
-  const [board, setBoard] = useState(fresh); const [turn, setTurn] = useState<'b'|'w'>('b')
-  useEffect(() => { const state = sharedState as { board?: (string | null)[][]; turn?: 'b' | 'w' } | undefined; if (state?.board?.length === 8 && state.turn) { setBoard(state.board); setTurn(state.turn) } }, [sharedState])
+  const [board, setBoard] = useState(fresh); const [turn, setTurn] = useState<'b'|'w'>('b'); const [winner, setWinner] = useState<'b'|'w'|null>(null); const [finished, setFinished] = useState(false)
+  useEffect(() => { const state = sharedState as State | undefined; if (state?.board?.length === 8 && state.turn) { setBoard(state.board); setTurn(state.turn); setWinner(state.winner ?? null); setFinished(Boolean(state.finished)) } }, [sharedState])
   const valid = (r: number, c: number, who = turn, b = board) => !b[r][c] && dirs.some(([dr,dc]) => { let y=r+dr,x=c+dc,n=0; while(y>=0&&y<8&&x>=0&&x<8&&b[y][x]&&b[y][x]!==who){n++;y+=dr;x+=dc} return n>0&&y>=0&&y<8&&x>=0&&x<8&&b[y][x]===who })
-  const place = (r:number,c:number) => { if (paused || !valid(r,c)) return; const next=board.map(row=>[...row]); dirs.forEach(([dr,dc])=>{let y=r+dr,x=c+dc,flips:[number,number][]=[];while(y>=0&&y<8&&x>=0&&x<8&&next[y][x]&&next[y][x]!==turn){flips.push([y,x]);y+=dr;x+=dc}if(flips.length&&y>=0&&y<8&&x>=0&&x<8&&next[y][x]===turn)flips.forEach(([fy,fx])=>next[fy][fx]=turn)}); next[r][c]=turn; const nextTurn=turn==='b'?'w':'b'; setBoard(next); setTurn(nextTurn); syncState({ board: next, turn: nextTurn }) }
+  const hasMove = (who:'b'|'w', b=board) => b.some((row,r) => row.some((_,c) => valid(r,c,who,b)))
+  const end = (b:(string|null)[][]) => { const black=b.flat().filter(x=>x==='b').length, white=b.flat().filter(x=>x==='w').length; return black===white ? null : black>white ? 'b' : 'w' }
+  const advance = (b:(string|null)[][], justPlayed:'b'|'w') => { const other=justPlayed==='b'?'w':'b'; const otherCan=hasMove(other,b); const sameCan=hasMove(justPlayed,b); const done=!otherCan&&!sameCan||b.flat().every(Boolean); const nextTurn=otherCan?other:justPlayed; const nextWinner=done?end(b):null; setBoard(b);setTurn(nextTurn);setWinner(nextWinner);setFinished(done);syncState({board:b,turn:nextTurn,winner:nextWinner,finished:done}) }
+  const place = (r:number,c:number) => { if (paused || finished || !valid(r,c)) return; const next=board.map(row=>[...row]); dirs.forEach(([dr,dc])=>{let y=r+dr,x=c+dc,flips:[number,number][]=[];while(y>=0&&y<8&&x>=0&&x<8&&next[y][x]&&next[y][x]!==turn){flips.push([y,x]);y+=dr;x+=dc}if(flips.length&&y>=0&&y<8&&x>=0&&x<8&&next[y][x]===turn)flips.forEach(([fy,fx])=>next[fy][fx]=turn)}); next[r][c]=turn; advance(next,turn) }
+  const pass = () => { if (paused || finished || hasMove(turn)) return; advance(board,turn==='b'?'w':'b') }
+  const reset = () => { const next=fresh();setBoard(next);setTurn('b');setWinner(null);setFinished(false);syncState({board:next,turn:'b',winner:null,finished:false}) }
   const black=board.flat().filter(x=>x==='b').length, white=board.flat().filter(x=>x==='w').length
-  return <div className="board-game"><div className="game-top"><div><span className="tag">ボードゲーム</span><h1>オセロ</h1></div><div className="turn-pill"><span className={`stone ${turn}`} />{turn === 'b' ? 'あなたの番です' : 'hana の番です'}</div></div><div className="othello-wrap"><div className="score-card"><p>あなた <span className="stone b" /></p><strong>{black}</strong></div><div className="othello-board">{board.map((row,r)=>row.map((cell,c)=><button key={`${r}-${c}`} onClick={()=>place(r,c)} aria-label={`${r+1}行${c+1}列`} className={`othello-cell ${valid(r,c) ? 'valid' : ''}`}>{cell&&<i className={`stone ${cell}`} />}</button>))}</div><div className="score-card"><p>hana <span className="stone w" /></p><strong>{white}</strong></div></div></div>
+  return <div className="board-game"><div className="game-top"><div><span className="tag">ボードゲーム</span><h1>オセロ</h1></div><div className="turn-pill">{finished ? winner ? `${winner==='b'?'黒':'白'}の勝ち` : '引き分け' : <><span className={`stone ${turn}`} />{turn === 'b' ? 'あなたの番です' : 'hana の番です'}</>}</div></div><div className="othello-wrap"><div className="score-card"><p>あなた <span className="stone b" /></p><strong>{black}</strong></div><div className="othello-board">{board.map((row,r)=>row.map((cell,c)=><button key={`${r}-${c}`} disabled={paused||finished} onClick={()=>place(r,c)} aria-label={`${r+1}行${c+1}列`} className={`othello-cell ${valid(r,c) ? 'valid' : ''}`}>{cell&&<i className={`stone ${cell}`} />}</button>))}</div><div className="score-card"><p>hana <span className="stone w" /></p><strong>{white}</strong></div></div><div className="go-actions">{!finished&&!hasMove(turn)&&<button className="secondary" disabled={paused} onClick={pass}>パスする</button>}{finished&&<button className="primary" onClick={reset}>もう一度遊ぶ</button>}</div></div>
 }
 
 function Gomoku({ paused, sharedState, syncState }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void }) {
@@ -571,6 +577,31 @@ function DeductionGame({ title, gameKey, paused, sharedState, privateState, sync
   return <div className="board-game deduction-game"><div className="game-top"><div><span className="tag">PARTY / SECRET ROLE</span><h1>{title}</h1></div><div className="turn-pill">ラウンド {state.round ?? 1}</div></div><section className="secret-card"><p className="eyebrow">YOUR SECRET</p><h2>{secret?.role ?? '役職を配布中…'}</h2>{gameKey === 'wordwolf' && <p>あなたのお題: <b>{secret?.word ?? '配布中'}</b></p>}<small>この情報はあなたの画面だけに送信されます。</small></section><section className="deduction-panel panel"><h2>議論と投票</h2><p>チャットで話し合い、怪しいと思う相手に投票してください。</p><div className="vote-list">{members.map(member => <button key={member.id} disabled={paused || Boolean(voted) || member.id === playerId} className={votes[playerId] === member.id ? 'selected' : ''} onClick={() => vote(member.id)}><span className={`avatar ${member.color}`}>{initials(member.name)}</span>{member.name}<small>{Object.values(votes).filter(value => value === member.id).length}票</small></button>)}</div><button className="primary" disabled={paused} onClick={next}>{Object.keys(votes).length >= members.length ? '投票を締め切る' : '投票を確認する'}</button></section></div>
 }
 
+function GameResultTracker({ gameKey, gameName, state, playerId, members, recordMatch }: { gameKey: GameKey; gameName: string; state: unknown; playerId: string; members: RoomMember[]; recordMatch: (game: string, result: 'win' | 'loss' | 'draw', snapshot?: unknown) => void }) {
+  const recorded = useRef('')
+  useEffect(() => {
+    if (gameKey === 'tag' || !state || typeof state !== 'object') return
+    const game = state as { winner?: unknown; loser?: unknown; finished?: unknown; passes?: number; score?: Record<string, number>; revealed?: number[]; lost?: boolean }
+    const localColor: Record<string, string> = { othello: 'b', gomoku: 'black', connect4: 'red', shogi: 'b', go: 'b', chess: 'w' }
+    let result: 'win' | 'loss' | 'draw' | null = null
+    if (typeof game.winner === 'string') result = game.winner === playerId || game.winner === localColor[gameKey] ? 'win' : 'loss'
+    else if (game.winner === null && ((gameKey === 'go' && game.passes === 2) || (gameKey === 'othello' && game.finished))) result = 'draw'
+    else if (typeof game.loser === 'string') result = game.loser === playerId ? 'loss' : 'win'
+    else if (gameKey === 'mines' && game.lost) result = 'loss'
+    else if (gameKey === 'mines' && Array.isArray(game.revealed) && game.revealed.length === 55) result = 'win'
+    else if (game.finished && game.score) {
+      const mine = game.score[playerId] ?? 0; const top = Math.max(...members.map(member => game.score?.[member.id] ?? 0)); const leaders = members.filter(member => (game.score?.[member.id] ?? 0) === top)
+      result = mine === top ? leaders.length > 1 ? 'draw' : 'win' : 'loss'
+    }
+    if (!result) { recorded.current = ''; return }
+    const key = `${gameKey}:${result}:${JSON.stringify(game)}`
+    if (recorded.current === key) return
+    recorded.current = key
+    recordMatch(gameName, result, state)
+  }, [gameKey, gameName, members, playerId, recordMatch, state])
+  return null
+}
+
 function App() {
   const [page,setPage]=useState<Page>('home'); const [selected,setSelected]=useState<GameKey>('tag'); const [showShortcut,setShowShortcut]=useState(false); const [youtubeUrl,setYoutubeUrl]=useState(() => localStorage.getItem('hidegames.youtube-url') ?? ''); const [brightness,setBrightness]=useState(() => Number(localStorage.getItem('hidegames.brightness') ?? 85)); const [shortcut,setShortcut]=useState(() => localStorage.getItem('hidegames.away-shortcut') ?? 'Ctrl + Shift + H'); const room = useRoomSession(); const player = usePlayerData()
   useEffect(()=>{localStorage.setItem('hidegames.youtube-url',youtubeUrl)},[youtubeUrl])
@@ -584,6 +615,7 @@ function App() {
   return <div className="app-shell">
     {page !== 'play' && <Sidebar page={page} setPage={setPage} unread={room.messages.length > 3 ? 1 : 0} />}
     <main className={page === 'play' ? 'play-main' : 'main'}>
+      {page === 'play' && <GameResultTracker gameKey={selected} gameName={current.title} state={room.gameState[selected]} playerId={room.localMember.id} members={room.members} recordMatch={player.recordMatch}/>}
       {page === 'home' && <HomeScreen setPage={setPage} start={start} favourites={player.data.favourites} />}
       {page === 'games' && <GamesScreen start={start} favourites={player.data.favourites} onFavourite={player.toggleFavourite} />}
       {page === 'room' && <RoomScreen start={()=>start(selected)} selected={current} members={room.members} localMemberId={room.localMember.id} roomCode={room.roomCode} onJoinRoom={room.joinRoom} onCreateRoom={room.createRoom} sharedMemo={(room.gameState.memo as { text?: string } | undefined)?.text ?? ''} onMemo={(text)=>room.setGameState('memo',{text})} sharedDrawing={(room.gameState.drawing as { lines?: DrawLine[] } | undefined)?.lines ?? []} onDrawing={(lines)=>room.setGameState('drawing',{lines})} onToggleReady={room.toggleReady} onSelectGame={(key)=>start(key)} awayHistory={room.awayHistory} tournamentState={room.gameState.tournament} onTournament={(state)=>room.setGameState('tournament',state)} roomLocked={room.roomLocked} onSetPassword={room.setRoomPassword} onReport={room.reportMember} />}
