@@ -607,7 +607,10 @@ io.on('connection', socket => {
     if (rateLimit('room-invite', senderId, 12, 60_000)) return ack({ ok: false, message: '招待の送信回数が多すぎます。少し待ってから再試行してください' })
     const room = getRoom(code)
     const sender = room.members.find(member => member.id === socket.data.memberId)
-    if (!sender || !await database.areFriends(senderId, targetId)) return ack({ ok: false, message: 'フレンドのみ招待できます' })
+    let friends = false
+    try { friends = await database.areFriends(senderId, targetId) }
+    catch (error) { console.error('Could not validate room invitation:', error.message); return ack({ ok: false, message: '招待の確認に失敗しました。少し待ってから再試行してください' }) }
+    if (!sender || !friends) return ack({ ok: false, message: 'フレンドのみ招待できます' })
     const invitation = { id: `${Date.now()}-${senderId}`, code, game: room.game, from: sender.name, at: Date.now(), token: jwt.sign({ sub: targetId, code, purpose: 'room-invite' }, jwtSecret, { issuer: 'hidegames-room-invite', expiresIn: '10m' }) }
     let delivered = false
     for (const client of io.sockets.sockets.values()) {
