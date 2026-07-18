@@ -582,9 +582,11 @@ function GameResultTracker({ gameKey, gameName, state, playerId, members, record
   useEffect(() => {
     if (gameKey === 'tag' || !state || typeof state !== 'object') return
     const game = state as { winner?: unknown; loser?: unknown; finished?: unknown; passes?: number; score?: Record<string, number>; revealed?: number[]; lost?: boolean }
-    const localColor: Record<string, string> = { othello: 'b', gomoku: 'black', connect4: 'red', shogi: 'b', go: 'b', chess: 'w' }
+    const firstColor: Record<string, string> = { othello: 'b', gomoku: 'black', connect4: 'red', shogi: 'b', go: 'b', chess: 'w' }
+    const secondColor: Record<string, string> = { othello: 'w', gomoku: 'white', connect4: 'yellow', shogi: 'w', go: 'w', chess: 'b' }
+    const localColor = members[0]?.id === playerId ? firstColor[gameKey] : secondColor[gameKey]
     let result: 'win' | 'loss' | 'draw' | null = null
-    if (typeof game.winner === 'string') result = game.winner === playerId || game.winner === localColor[gameKey] ? 'win' : 'loss'
+    if (typeof game.winner === 'string') result = game.winner === playerId || game.winner === localColor ? 'win' : 'loss'
     else if (game.winner === null && ((gameKey === 'go' && game.passes === 2) || (gameKey === 'othello' && game.finished))) result = 'draw'
     else if (typeof game.loser === 'string') result = game.loser === playerId ? 'loss' : 'win'
     else if (gameKey === 'mines' && game.lost) result = 'loss'
