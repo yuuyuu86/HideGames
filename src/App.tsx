@@ -911,7 +911,7 @@ function YoutubeScreenV2({ url, setUrl, paused, sharedState, syncState }: { url:
   const shared = sharedState as { url?: string; playing?: boolean; position?: number; startedAt?: number; pauseOnAway?: boolean; links?: { url: string; label: string }[] } | undefined
   const pauseOnAway=shared?.pauseOnAway!==false
   const activeUrl = shared?.url || url
-  const embed = useMemo(() => { const id = activeUrl.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/)?.[1]; return id ? `https://www.youtube.com/embed/${id}?rel=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}` : '' }, [activeUrl])
+  const embed = useMemo(() => { try { const parsed=new URL(activeUrl);const list=parsed.searchParams.get('list');const id=activeUrl.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/)?.[1];const base=list?`https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(list)}`:id?`https://www.youtube.com/embed/${id}`:'';return base?`${base}${base.includes('?')?'&':'?'}rel=0&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`:'' } catch { return '' } }, [activeUrl])
   const command = (func: string, args: unknown[] = []) => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*')
   const requestPosition = () => command('getCurrentTime')
   useEffect(() => { const onMessage = (event: MessageEvent) => { if (typeof event.data !== 'string' || !event.data.includes('currentTime')) return; try { const data = JSON.parse(event.data); if (typeof data.info?.currentTime === 'number') setPosition(data.info.currentTime) } catch { /* YouTube以外のpostMessageは無視 */ } }; window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage) }, [])
