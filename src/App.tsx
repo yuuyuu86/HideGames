@@ -321,6 +321,8 @@ function GoGame({ paused, sharedState, syncState, members, playerId }: { paused:
   return <div className="board-game go-game"><div className="game-top"><div><span className="tag">BOARD / GO</span><h1>囲碁</h1></div><div className="turn-pill">{winner?`${winner==='b'?'黒':'白'}の勝ち`:`${turn===myColor?'あなた':'相手'}の番`}</div></div><div className="go-score"><span><i className="stone b"/>黒: {captures.b} 石を取る</span><span><i className="stone w"/>白: {captures.w} 石を取る</span></div>{ruleNotice&&<p className="setting-status" role="alert">{ruleNotice}</p>}<div className="go-board">{board.map((line,row)=>line.map((stone,col)=><button key={`${row}-${col}`} disabled={paused||Boolean(winner)||turn!==myColor} onClick={()=>place(row,col)} aria-label={`${row+1}行${col+1}列`}><span>{stone&&<i className={`stone ${stone}`}/>}</span></button>))}</div><div className="go-actions"><button className="secondary" disabled={paused||Boolean(winner)||turn!==myColor} onClick={pass}>パスする {passes ? `(${passes}/2)` : ''}</button>{winner&&<button className="primary" disabled={!host} onClick={reset}>新しい対局</button>}</div></div>
 }
 function ChessGame({ paused, sharedState, syncState, members, playerId }: { paused: boolean; sharedState: unknown; syncState: (state: unknown) => void; members: RoomMember[]; playerId: string }) {
+  type EnPassant = { row:number; col:number; pawnRow:number; pawnCol:number; capturableBy:'w'|'b' } | null
+  type State = { board?: (ChessPiece | null)[][]; turn?: 'w'|'b'; winner?: 'w'|'b'|null; draw?: boolean; moved?: Record<string,boolean>; enPassant?: EnPassant }
   const initial = (): (ChessPiece | null)[][] => [
     ['br','bn','bb','bq','bk','bb','bn','br'], Array(8).fill('bp'), ...Array.from({length:4},()=>Array(8).fill(null)), Array(8).fill('wp'), ['wr','wn','wb','wq','wk','wb','wn','wr'],
   ] as (ChessPiece | null)[][]
@@ -328,35 +330,43 @@ function ChessGame({ paused, sharedState, syncState, members, playerId }: { paus
   const [turn, setTurn] = useState<'w' | 'b'>('w')
   const [selected, setSelected] = useState<[number, number] | null>(null)
   const [winner, setWinner] = useState<'w' | 'b' | null>(null)
-  useEffect(() => { const state = sharedState as { board?: (ChessPiece | null)[][]; turn?: 'w'|'b'; winner?: 'w'|'b'|null } | undefined; if (state?.board?.length === 8 && state.turn) { setBoard(state.board); setTurn(state.turn); setWinner(state.winner ?? null); setSelected(null) } }, [sharedState])
-  const valid = (from: [number,number], to: [number,number], piece = board[from[0]][from[1]]) => {
+  const [draw, setDraw] = useState(false)
+  const [moved, setMoved] = useState<Record<string,boolean>>({})
+  const [enPassant, setEnPassant] = useState<EnPassant>(null)
+  useEffect(() => { const state = sharedState as State | undefined; if (state?.board?.length === 8 && state.turn) { setBoard(state.board); setTurn(state.turn); setWinner(state.winner ?? null); setDraw(Boolean(state.draw)); setMoved(state.moved ?? {}); setEnPassant(state.enPassant ?? null); setSelected(null) } }, [sharedState])
+  const valid = (from: [number,number], to: [number,number], piece: ChessPiece | null | undefined = board[from[0]][from[1]], source=board) => {
     if (!piece || from[0] === to[0] && from[1] === to[1]) return false
-    const target = board[to[0]][to[1]]
+    const target = source[to[0]][to[1]]
     if (target?.[0] === piece[0]) return false
     const dy = to[0]-from[0], dx = to[1]-from[1], ay=Math.abs(dy), ax=Math.abs(dx); const kind=piece[1]
-    const clear = () => { const sy=Math.sign(dy), sx=Math.sign(dx); for(let y=from[0]+sy,x=from[1]+sx;y!==to[0]||x!==to[1];y+=sy,x+=sx) if(board[y][x]) return false; return true }
-    if (kind==='p') { const direction=piece[0]==='w'?-1:1, start=piece[0]==='w'?6:1; return dx===0 && !target && (dy===direction || dy===2*direction && from[0]===start && !board[from[0]+direction][from[1]]) || ay===1 && dx!==0 && dy===direction && Boolean(target) }
+    const clear = () => { const sy=Math.sign(dy), sx=Math.sign(dx); for(let y=from[0]+sy,x=from[1]+sx;y!==to[0]||x!==to[1];y+=sy,x+=sx) if(source[y][x]) return false; return true }
+    if (kind==='p') { const direction=piece[0]==='w'?-1:1, start=piece[0]==='w'?6:1; return dx===0 && !target && (dy===direction || dy===2*direction && from[0]===start && !source[from[0]+direction][from[1]]) || ay===1 && dx!==0 && dy===direction && Boolean(target) }
     if (kind==='n') return ay*ax===2
     if (kind==='k') return ay<=1&&ax<=1
     if (kind==='r') return (dy===0||dx===0)&&clear()
     if (kind==='b') return ay===ax&&clear()
     return (dy===0||dx===0||ay===ax)&&clear()
   }
+  const inCheck=(source:(ChessPiece|null)[][],color:'w'|'b')=>{let king:[number,number]|null=null;source.forEach((line,row)=>line.forEach((piece,col)=>{if(piece===`${color}k`)king=[row,col]}));return !king||source.some((line,row)=>line.some((piece,col)=>Boolean(piece&&piece[0]!==color&&valid([row,col],king!,piece,source))))}
+  const castle=(from:[number,number],to:[number,number],piece:ChessPiece|null|undefined,source:(ChessPiece|null)[][],movedState:Record<string,boolean>)=>{if(!piece||piece[1]!=='k'||from[0]!==to[0]||Math.abs(to[1]-from[1])!==2||movedState[`${piece[0]}k`]||inCheck(source,piece[0] as 'w'|'b'))return false;const rookCol=to[1]>from[1]?7:0,step=to[1]>from[1]?1:-1,rook=source[from[0]][rookCol];if(rook!==`${piece[0]}r`||movedState[`${piece[0]}r${rookCol}`])return false;for(let col=from[1]+step;col!==rookCol;col+=step)if(source[from[0]][col])return false;for(const col of [from[1]+step,to[1]]){const stage=source.map(line=>[...line]);stage[from[0]][from[1]]=null;stage[from[0]][col]=piece;if(inCheck(stage,piece[0] as 'w'|'b'))return false}return true}
+  const isEnPassant=(from:[number,number],to:[number,number],piece:ChessPiece|null|undefined,ep:EnPassant,source=board)=>Boolean(piece?.[1]==='p'&&ep&&ep.capturableBy===piece[0]&&to[0]===ep.row&&to[1]===ep.col&&from[1]!==to[1]&&!source[to[0]][to[1]])
+  const apply=(source:(ChessPiece|null)[][],from:[number,number],to:[number,number],piece:ChessPiece,ep:EnPassant,isCastle:boolean,isEp:boolean)=>{const next=source.map(line=>[...line]);next[from[0]][from[1]]=null;if(isEp&&ep)next[ep.pawnRow][ep.pawnCol]=null;next[to[0]][to[1]]=piece[1]==='p'&&(to[0]===0||to[0]===7)?`${piece[0]}q` as ChessPiece:piece;if(isCastle){const rookFrom=to[1]>from[1]?7:0,rookTo=to[1]>from[1]?5:3;next[from[0]][rookTo]=next[from[0]][rookFrom];next[from[0]][rookFrom]=null}return next}
+  const legal=(from:[number,number],to:[number,number],piece:ChessPiece|null|undefined,source:(ChessPiece|null)[][],movedState:Record<string,boolean>,ep:EnPassant)=>{if(!piece)return false;const castling=castle(from,to,piece,source,movedState);const passant=isEnPassant(from,to,piece,ep,source);if(!castling&&!passant&&!valid(from,to,piece,source))return false;return !inCheck(apply(source,from,to,piece,ep,castling,passant),piece[0] as 'w'|'b')}
+  const hasLegalMove=(source:(ChessPiece|null)[][],color:'w'|'b',movedState:Record<string,boolean>,ep:EnPassant)=>source.some((line,row)=>line.some((piece,col)=>piece?.[0]===color&&source.some((targetLine,targetRow)=>targetLine.some((_,targetCol)=>legal([row,col],[targetRow,targetCol],piece,source,movedState,ep)))))
   const playerIndex=members.findIndex(member=>member.id===playerId);const myColor=playerIndex===0?'w':playerIndex===1?'b':null;const host=members[0]?.id===playerId
   const move = (row: number, col: number) => {
-    if (paused || winner || turn!==myColor) return
+    if (paused || winner || draw || turn!==myColor) return
     const piece = board[row][col]
     if (!selected) { if (piece?.[0] === turn) setSelected([row,col]); return }
     if (selected[0] === row && selected[1] === col) return setSelected(null)
     const moving = board[selected[0]][selected[1]]
     if (piece?.[0] === turn) return setSelected([row,col])
-    if (!valid(selected,[row,col],moving)) return
-    const next = board.map(line=>[...line]); const captured=next[row][col]; next[row][col] = moving?.[1] === 'p' && (row === 0 || row === 7) ? `${moving[0]}q` as ChessPiece : moving; next[selected[0]][selected[1]] = null
-    const won = captured?.[1] === 'k' ? turn : null; const nextTurn = turn==='w'?'b':'w'; setBoard(next);setTurn(nextTurn);setWinner(won);setSelected(null);syncState({board:next,turn:nextTurn,winner:won})
+    if (!legal(selected,[row,col],moving,board,moved,enPassant)) return
+    const castling=castle(selected,[row,col],moving,board,moved);const passant=isEnPassant(selected,[row,col],moving,enPassant);const next=apply(board,selected,[row,col],moving!,enPassant,castling,passant);const nextMoved={...moved};if(moving==='wk'||moving==='bk')nextMoved[`${moving[0]}k`]=true;if(moving?.[1]==='r'&&selected[1]===0)nextMoved[`${moving[0]}r0`]=true;if(moving?.[1]==='r'&&selected[1]===7)nextMoved[`${moving[0]}r7`]=true;const nextEp=moving?.[1]==='p'&&Math.abs(row-selected[0])===2?{row:(row+selected[0])/2,col:row===selected[0]?col:selected[1],pawnRow:row,pawnCol:col,capturableBy:moving[0]==='w'?'b' as const:'w' as const}:null;const nextTurn=turn==='w'?'b':'w';const checked=inCheck(next,nextTurn);const noMoves=!hasLegalMove(next,nextTurn,nextMoved,nextEp);const won=checked&&noMoves?turn:null;const drawn=!checked&&noMoves;setBoard(next);setTurn(nextTurn);setWinner(won);setDraw(drawn);setMoved(nextMoved);setEnPassant(nextEp);setSelected(null);syncState({board:next,turn:nextTurn,winner:won,draw:drawn,moved:nextMoved,enPassant:nextEp})
   }
   const glyph: Record<ChessPiece,string> = {wk:'♔',wq:'♕',wr:'♖',wb:'♗',wn:'♘',wp:'♙',bk:'♚',bq:'♛',br:'♜',bb:'♝',bn:'♞',bp:'♟'}
-  const reset = () => { if(!host)return; const next=initial();setBoard(next);setTurn('w');setWinner(null);setSelected(null);syncState({board:next,turn:'w',winner:null}) }
-  return <div className="board-game chess-game"><div className="game-top"><div><span className="tag">BOARD / CHESS</span><h1>チェス</h1></div><div className="turn-pill">{winner ? `${winner==='w'?'白':'黒'}の勝ち` : `${turn===myColor?'あなた':'相手'}の番`}</div></div><p className="game-hint">駒を選び、移動先を選択します。ポーンは最終列で自動的にクイーンへ昇格します。</p><div className="chess-board">{board.map((line,row)=>line.map((piece,col)=>{const active=selected?.[0]===row&&selected?.[1]===col;const destination=selected&&valid(selected,[row,col]);return <button key={`${row}-${col}`} disabled={paused||Boolean(winner)||turn!==myColor} onClick={()=>move(row,col)} className={`${(row+col)%2?'dark':'light'} ${active?'active':''} ${destination?'move-target':''}`} aria-label={`${row+1}行${col+1}列`}>{piece&&<span className={piece[0]==='w'?'white-piece':'black-piece'}>{glyph[piece]}</span>}</button>}))}</div>{winner&&<button className="secondary center" disabled={!host} onClick={reset}>新しい対局</button>}</div>
+  const reset = () => { if(!host)return; const next=initial();setBoard(next);setTurn('w');setWinner(null);setDraw(false);setMoved({});setEnPassant(null);setSelected(null);syncState({board:next,turn:'w',winner:null,draw:false,moved:{},enPassant:null}) }
+  return <div className="board-game chess-game"><div className="game-top"><div><span className="tag">BOARD / CHESS</span><h1>チェス</h1></div><div className="turn-pill">{winner ? `${winner==='w'?'白':'黒'}のチェックメイト` : draw?'ステイルメイトで引き分け':inCheck(board,turn)?`${turn===myColor?'あなた':'相手'}は王手です`:`${turn===myColor?'あなた':'相手'}の番`}</div></div><p className="game-hint">ポーンは最終列でクイーンへ昇格します。王手を放置する手、王手を通過するキャスリングはできません。</p><div className="chess-board">{board.map((line,row)=>line.map((piece,col)=>{const active=selected?.[0]===row&&selected?.[1]===col;const destination=selected&&legal(selected,[row,col],board[selected[0]][selected[1]],board,moved,enPassant);return <button key={`${row}-${col}`} disabled={paused||Boolean(winner)||draw||turn!==myColor} onClick={()=>move(row,col)} className={`${(row+col)%2?'dark':'light'} ${active?'active':''} ${destination?'move-target':''}`} aria-label={`${row+1}行${col+1}列`}>{piece&&<span className={piece[0]==='w'?'white-piece':'black-piece'}>{glyph[piece]}</span>}</button>}))}</div>{(winner||draw)&&<button className="secondary center" disabled={!host} onClick={reset}>{host?'新しい対局':'ホストが再戦を開始します'}</button>}</div>
 }
 
 function TagGame({ paused, sharedState, moveTag, rematch, onFinished, playerId, members }: { paused: boolean; sharedState: unknown; moveTag: (position: { x: number; y: number }) => void; rematch: () => void; onFinished: (result: 'win' | 'loss') => void; playerId: string; members: RoomMember[] }) {

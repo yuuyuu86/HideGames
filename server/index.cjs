@@ -159,7 +159,7 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game !== room.game) return false
   const previous = room.gameState[game]
   if (!previous || typeof previous !== 'object') return isHost
-  if (previous.winner || previous.loser || previous.lost) return isHost
+  if (previous.winner || previous.loser || previous.lost || previous.draw) return isHost
   const colors = colorTurnGames[game]
   if (colors) {
     const playerIndex = colors.indexOf(previous.turn)
