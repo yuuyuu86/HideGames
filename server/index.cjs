@@ -273,7 +273,7 @@ async function hydrateRoom(code) {
   try {
     const saved = await database.loadRoom(code)
     if (saved && typeof saved === 'object') {
-      const room = { ...blankRoom(), ...saved, members: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null } }
+      const room = { ...blankRoom(), ...saved, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: saved.access?.passwordHash ?? null } }
       normalizeHosts(room)
       rooms.set(code, room)
       return room

@@ -124,7 +124,7 @@ async function loadRoom(code) {
 }
 
 function serializeRoom(room) {
-  return { ...room, members: [], resume: { readyIds: [] }, access: { passwordHash: room.access?.passwordHash ?? null } }
+  return { ...room, members: [], spectators: [], resume: { readyIds: [] }, access: { passwordHash: room.access?.passwordHash ?? null } }
 }
 
 async function saveRoom(code, room) {
