@@ -32,6 +32,13 @@ function readAuthenticatedUser(request) {
   try { return jwt.verify(match[1], jwtSecret, { issuer: 'hidegames' }) }
   catch { return null }
 }
+function readRoomInvitation(token, code, userId) {
+  if (!jwtSecret || typeof token !== 'string' || !userId) return false
+  try {
+    const invitation = jwt.verify(token, jwtSecret, { issuer: 'hidegames-room-invite' })
+    return invitation?.purpose === 'room-invite' && invitation.code === code && invitation.sub === userId
+  } catch { return false }
+}
 function serveStatic(request, response) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const pathname = new URL(request.url, 'http://localhost').pathname
@@ -378,7 +385,7 @@ io.use((socket, next) => {
 })
 
 io.on('connection', socket => {
-  socket.on('room:join', async ({ code, member, password, spectator }) => {
+  socket.on('room:join', async ({ code, member, password, spectator, inviteToken }) => {
     const normalizedCode = typeof code === 'string' ? code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : ''
     if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) return socket.emit('room:error', { message: 'ルームコードは英数字6文字で入力してください' })
     code = normalizedCode
@@ -393,7 +400,8 @@ io.on('connection', socket => {
     }
     if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
     const room = await hydrateRoom(code)
-    if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
+    const invited = readRoomInvitation(inviteToken, code, socket.data.user?.sub)
+    if (room.access?.passwordHash && !invited && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
     const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
     if (spectator && existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
     const existing = room.members.findIndex(item => item.id === member.id)
@@ -599,7 +607,7 @@ io.on('connection', socket => {
     const room = getRoom(code)
     const sender = room.members.find(member => member.id === socket.data.memberId)
     if (!sender || !await database.areFriends(senderId, targetId)) return ack({ ok: false, message: 'フレンドのみ招待できます' })
-    const invitation = { id: `${Date.now()}-${senderId}`, code, game: room.game, from: sender.name, at: Date.now() }
+    const invitation = { id: `${Date.now()}-${senderId}`, code, game: room.game, from: sender.name, at: Date.now(), token: jwt.sign({ sub: targetId, code, purpose: 'room-invite' }, jwtSecret, { issuer: 'hidegames-room-invite', expiresIn: '10m' }) }
     let delivered = false
     for (const client of io.sockets.sockets.values()) {
       if (client.data.user?.sub !== targetId) continue

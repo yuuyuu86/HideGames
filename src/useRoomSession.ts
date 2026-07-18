@@ -23,7 +23,7 @@ export type AwayHistoryItem = { id: string; name: string; away: boolean; at: num
 export type ResumeState = { readyIds: string[]; startsAt?: number }
 export type VoiceEvent = { id: string; joined: boolean }
 export type GameStartEvent = { game: string; by: string; byId: string; at: number }
-export type RoomInvitation = { id: string; code: string; game: string; from: string; at: number }
+export type RoomInvitation = { id: string; code: string; game: string; from: string; at: number; token: string }
 
 type Event =
   | { type: 'chat'; message: RoomMessage }
@@ -62,13 +62,14 @@ export function useRoomSession() {
   const [roomLocked, setRoomLocked] = useState(false)
   const [connected, setConnected] = useState(false)
   const [roomPassword, setRoomPassword] = useState(() => sessionStorage.getItem('hidegames.room-password') ?? '')
+  const [roomInviteToken, setRoomInviteToken] = useState(() => sessionStorage.getItem('hidegames.room-invite-token') ?? '')
   const [roomError, setRoomError] = useState('')
   const [lastGameStart, setLastGameStart] = useState<GameStartEvent | null>(null)
   const [invitations, setInvitations] = useState<RoomInvitation[]>([])
   const [authRevision, setAuthRevision] = useState(0)
   const channel = useRef<BroadcastChannel | null>(null)
   const socket = useRef<Socket | null>(null)
-  const joinDetails = useRef({ roomCode, roomPassword })
+  const joinDetails = useRef({ roomCode, roomPassword, roomInviteToken })
   const signalHandlers = useRef(new Set<(signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void>())
   const voiceHandlers = useRef(new Set<(event: VoiceEvent) => void>())
   const localMember = useMemo(() => {
@@ -77,7 +78,7 @@ export function useRoomSession() {
     if (!existing) sessionStorage.setItem('hidegames.member-id', id)
     return { ...memberPalette[0], id }
   }, [])
-  joinDetails.current = { roomCode, roomPassword }
+  joinDetails.current = { roomCode, roomPassword, roomInviteToken }
 
   const apply = useCallback((event: Event) => {
     if (event.type === 'chat') setMessages(current => current.some(message => message.id === event.message.id) ? current : [...current, event.message])
@@ -102,7 +103,7 @@ export function useRoomSession() {
     const url = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
     const client = io(url, { autoConnect: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 10_000, timeout: 5000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
     socket.current = client
-    client.on('connect', () => { const details = joinDetails.current; setConnected(true); client.emit('room:join', { code: details.roomCode, member: localMember, password: details.roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' }) })
+    client.on('connect', () => { const details = joinDetails.current; setConnected(true); client.emit('room:join', { code: details.roomCode, member: localMember, password: details.roomPassword, inviteToken: details.roomInviteToken || undefined, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' }) })
     client.on('disconnect', () => setConnected(false))
     client.on('connect_error', () => setConnected(false))
     client.on('room:state', (next) => {
@@ -115,6 +116,7 @@ export function useRoomSession() {
       if (Array.isArray(next.awayHistory)) setAwayHistory(next.awayHistory)
       if (next.resume && typeof next.resume === 'object') setResume(next.resume)
       if (typeof next.access?.locked === 'boolean') setRoomLocked(next.access.locked)
+      if (typeof next.code === 'string' && next.code === joinDetails.current.roomCode && Array.isArray(next.members) && next.members.some((member: { id?: unknown }) => member?.id === localMember.id)) { sessionStorage.removeItem('hidegames.room-invite-token'); setRoomInviteToken('') }
       if (typeof next.code === 'string' && next.code === joinDetails.current.roomCode && Array.isArray(next.members) && next.members.some((member: { id?: unknown }) => member?.id === localMember.id)) setInvitations(current => current.filter(invitation => invitation.code !== next.code))
     })
     client.on('room:error', ({ message }) => {
@@ -126,14 +128,14 @@ export function useRoomSession() {
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
     client.on('room:voice', (event) => { if (typeof event?.id === 'string' && typeof event.joined === 'boolean') voiceHandlers.current.forEach(handler => handler(event)) })
     client.on('room:game-start', (event) => { if (typeof event?.game === 'string' && typeof event?.by === 'string' && typeof event?.byId === 'string' && typeof event?.at === 'number') setLastGameStart(event) })
-    client.on('room:invite', (event) => { if (typeof event?.id === 'string' && typeof event?.code === 'string' && typeof event?.game === 'string' && typeof event?.from === 'string' && typeof event?.at === 'number') setInvitations(current => [event, ...current.filter(item => item.id !== event.id)].slice(0, 8)) })
+    client.on('room:invite', (event) => { if (typeof event?.id === 'string' && typeof event?.code === 'string' && typeof event?.game === 'string' && typeof event?.from === 'string' && typeof event?.at === 'number' && typeof event?.token === 'string') setInvitations(current => [event, ...current.filter(item => item.id !== event.id)].slice(0, 8)) })
     return () => { client.close() }
   }, [authRevision, localMember])
 
   useEffect(() => {
     if (!socket.current?.connected) return
-    socket.current.emit('room:join', { code: roomCode, member: localMember, password: roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' })
-  }, [localMember, roomCode, roomPassword])
+    socket.current.emit('room:join', { code: roomCode, member: localMember, password: roomPassword, inviteToken: roomInviteToken || undefined, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' })
+  }, [localMember, roomCode, roomPassword, roomInviteToken])
 
   useEffect(() => { const refresh = () => setAuthRevision(value => value + 1); window.addEventListener('hidegames-auth', refresh); return () => window.removeEventListener('hidegames-auth', refresh) }, [])
 
@@ -164,12 +166,14 @@ export function useRoomSession() {
     invitations,
     localMember,
     roomCode,
-    joinRoom: (rawCode: string, password = '', spectator = false) => {
+    joinRoom: (rawCode: string, password = '', spectator = false, inviteToken = '') => {
       const normalized = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
       if (!/^[A-Z0-9]{6}$/.test(normalized)) return false
       sessionStorage.setItem('hidegames.room-password', password)
       sessionStorage.setItem('hidegames.spectator', String(spectator))
+      if (inviteToken) sessionStorage.setItem('hidegames.room-invite-token', inviteToken); else sessionStorage.removeItem('hidegames.room-invite-token')
       setRoomPassword(password)
+      setRoomInviteToken(inviteToken)
       setRoomError('')
       localStorage.setItem('hidegames.room-code', normalized)
       setRoomCode(normalized)
@@ -179,7 +183,9 @@ export function useRoomSession() {
       const code = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('')
       sessionStorage.setItem('hidegames.spectator', 'false')
       sessionStorage.removeItem('hidegames.room-password')
+      sessionStorage.removeItem('hidegames.room-invite-token')
       setRoomPassword('')
+      setRoomInviteToken('')
       setRoomError('')
       localStorage.setItem('hidegames.room-code', code)
       setRoomCode(code)
@@ -208,6 +214,7 @@ export function useRoomSession() {
         if (result?.ok) {
           sessionStorage.removeItem('hidegames.spectator')
           sessionStorage.removeItem('hidegames.room-password')
+          sessionStorage.removeItem('hidegames.room-invite-token')
           localStorage.removeItem('hidegames.room-code')
           setMembers([localMember])
           setSpectators([])
