@@ -2,6 +2,8 @@
   "name": "hidegames",
   "private": true,
   "version": "0.1.0",
+  "description": "A desktop game hub with instant away mode for online rooms.",
+  "author": "HideGames",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -12,6 +14,9 @@
     "test": "npm run test:catalog && npm run test:mahjong",
     "preview": "vite preview",
     "desktop": "node scripts/start-desktop.cjs",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
     "server": "node --env-file-if-exists=.env.local server/index.cjs",
     "online": "concurrently -k \"npm run server\" \"vite --host 0.0.0.0\""
   },
@@ -30,12 +35,33 @@
     "typescript": "latest",
     "vite": "latest"
   },
+  "build": {
+    "appId": "com.hidegames.desktop",
+    "productName": "HideGames",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.games"
+    },
+    "win": {
+      "target": ["nsis", "zip"]
+    }
+  },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "concurrently": "^10.0.3",
     "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
     "wait-on": "latest"
   }
 }
