@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build",
     "test:mahjong": "node scripts/test-mahjong.cjs",
     "preview": "vite preview",
-    "desktop": "node scripts/check-port.cjs 3001 && concurrently -k \"npm run server\" \"vite --host 127.0.0.1 --port 5173\" \"wait-on tcp:3001 http://127.0.0.1:5173 && electron .\"",
+    "desktop": "node scripts/start-desktop.cjs",
     "server": "node --env-file-if-exists=.env.local server/index.cjs",
     "online": "concurrently -k \"npm run server\" \"vite --host 0.0.0.0\""
   },
