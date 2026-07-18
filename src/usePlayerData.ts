@@ -3,9 +3,11 @@ import { useCallback, useEffect, useState } from 'react'
 export type ReplayRecord = { id: string; game: string; result: 'win' | 'loss' | 'draw'; playedAt: string; summary: string; snapshot?: unknown }
 export type MatchRecord = { id: string; game: string; result: 'win' | 'loss' | 'draw'; playedAt: string; replayId?: string }
 export type RecentPlayer = { id: string; name: string; color: 'mint' | 'purple' | 'blue' | 'orange'; playedAt: string }
+export type AvatarTone = 'mint' | 'purple' | 'blue' | 'orange'
 export type PlayerData = {
   displayName: string
   title: string
+  avatarTone: AvatarTone
   level: number
   xp: number
   favourites: string[]
@@ -16,7 +18,7 @@ export type PlayerData = {
 }
 
 const initial: PlayerData = {
-  displayName: 'yuta', title: '夜更かしプレイヤー', level: 12, xp: 480,
+  displayName: 'yuta', title: '夜更かしプレイヤー', avatarTone: 'mint', level: 12, xp: 480,
   favourites: ['tag', 'othello', 'gomoku'],
   achievements: ['初勝利', '連続ログイン', '鬼から逃げ切る'],
   matches: [],
@@ -94,9 +96,10 @@ export function usePlayerData() {
     })
   }, [])
   const toggleFavourite = useCallback((game: string) => setData(current => ({ ...current, favourites: current.favourites.includes(game) ? current.favourites.filter(item => item !== game) : [...current.favourites, game] })), [])
+  const updateAppearance = useCallback((title: string, avatarTone: AvatarTone) => setData(current => ({ ...current, title, avatarTone })), [])
   const recordRecentPlayers = useCallback((players: Array<{ id: string; name: string; color: RecentPlayer['color'] }>, ownId: string) => setData(current => {
     const now=new Date().toISOString();const additions=players.filter(player=>player.id!==ownId).map(player=>({...player,playedAt:now}));const recentPlayers=[...additions,...(current.recentPlayers??[]).filter(player=>!additions.some(next=>next.id===player.id))].slice(0,12)
     return JSON.stringify(recentPlayers)===JSON.stringify(current.recentPlayers??[])?current:{...current,recentPlayers}
   }), [])
-  return { data, updateProfile, recordMatch, toggleFavourite, recordRecentPlayers }
+  return { data, updateProfile, updateAppearance, recordMatch, toggleFavourite, recordRecentPlayers }
 }
