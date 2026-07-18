@@ -62,6 +62,12 @@ async function findUserByEmail(email) {
   return result.rows[0] ?? null
 }
 
+async function updateUserDisplayName(userId, displayName) {
+  if (!pool) throw new Error('DATABASE_URL is not configured')
+  const result = await pool.query('update hidegames_users set display_name = $2 where id = $1 returning id, email, display_name', [userId, displayName])
+  return result.rows[0] ?? null
+}
+
 async function saveMatchResult(userId, { game, result, snapshot }) {
   if (!pool) throw new Error('DATABASE_URL is not configured')
   const saved = await pool.query(`insert into hidegames_match_results (user_id, game, result, snapshot)
@@ -134,4 +140,4 @@ async function saveReport(report) {
     values ($1, $2, $3, $4, $5, to_timestamp($6 / 1000.0)) on conflict (id) do nothing`, [report.id, report.code, report.reporterId, report.targetId, report.reason, report.createdAt])
 }
 
-module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, serializeRoom, enabled: Boolean(pool) }
+module.exports = { initializeDatabase, loadRoom, saveRoom, saveReport, createUser, findUserByEmail, updateUserDisplayName, saveMatchResult, listMatchResults, listRankings, listFriends, createFriendship, removeFriendship, serializeRoom, enabled: Boolean(pool) }

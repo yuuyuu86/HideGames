@@ -64,7 +64,20 @@ export function usePlayerData() {
     window.addEventListener('hidegames-auth', onAuth)
     return () => window.removeEventListener('hidegames-auth', onAuth)
   }, [])
-  const updateProfile = useCallback((displayName: string) => setData(current => ({ ...current, displayName: displayName.trim() || current.displayName })), [])
+  const updateProfile = useCallback((displayName: string) => {
+    const name = displayName.trim()
+    if (!name) return
+    setData(current => ({ ...current, displayName: name }))
+    const token = localStorage.getItem('hidegames.auth-token')
+    if (token) void fetch(`${apiBase()}/api/profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ displayName: name }) }).then(async response => {
+      const body = await response.json() as { token?: string; user?: { id: string; displayName: string } }
+      if (!response.ok || !body.token || !body.user) return
+      localStorage.setItem('hidegames.auth-token', body.token)
+      localStorage.setItem('hidegames.account-id', body.user.id)
+      localStorage.setItem('hidegames.account-name', body.user.displayName)
+      window.dispatchEvent(new Event('hidegames-auth'))
+    }).catch(() => undefined)
+  }, [])
   const recordMatch = useCallback((game: string, result: MatchRecord['result'], snapshot?: unknown) => {
     const token = localStorage.getItem('hidegames.auth-token')
     if (token) {

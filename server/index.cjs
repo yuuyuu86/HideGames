@@ -97,6 +97,21 @@ async function handleHttp(request, response) {
       return sendJson(response, status, { error: error.message === 'DATABASE_URL is not configured' ? 'フレンドサービスはまだ設定されていません' : error.message || 'フレンドの処理に失敗しました' })
     }
   }
+  if (url.pathname === '/api/profile') {
+    if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: 'プロフィールサービスはまだ設定されていません' })
+    const user = readAuthenticatedUser(request)
+    if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+    if (request.method !== 'PATCH') return sendJson(response, 405, { error: 'Method not allowed' })
+    try {
+      const { displayName } = await readJson(request)
+      const name = typeof displayName === 'string' ? displayName.trim().slice(0, 32) : ''
+      if (!name) return sendJson(response, 400, { error: '表示名を入力してください' })
+      const updated = await database.updateUserDisplayName(user.sub, name)
+      if (!updated) return sendJson(response, 404, { error: 'アカウントが見つかりません' })
+      const token = jwt.sign({ sub: updated.id, name: updated.display_name }, jwtSecret, { expiresIn: '7d', issuer: 'hidegames' })
+      return sendJson(response, 200, { token, user: { id: updated.id, displayName: updated.display_name } })
+    } catch (error) { return sendJson(response, 500, { error: 'プロフィールを更新できませんでした' }) }
+  }
   if (request.method !== 'POST' || !['/auth/signup', '/auth/login'].includes(url.pathname)) return serveStatic(request, response) || sendJson(response, 404, { error: 'Not found' })
   if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '認証サービスはまだ設定されていません' })
   const identity = clientKey(request)
