@@ -245,7 +245,7 @@ function hasOnlySafeExternalLinks(state) {
 }
 
 function blankRoom() {
-  return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], resume: { readyIds: [] }, access: { passwordHash: null } }
+  return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null } }
 }
 
 function normalizeHosts(room) {
@@ -378,10 +378,15 @@ io.on('connection', socket => {
     }
     if (event.type === 'away') {
       if (event.id !== socket.data.memberId) return broadcastRoom(code)
+      if (Boolean(event.away) && Date.now() < Number(room.awayCooldownUntil ?? 0)) {
+        socket.emit('room:error', { message: '復帰直後のため、あと少し待ってから再度離席してください' })
+        return broadcastRoom(code)
+      }
       room.members = room.members.map(member => member.id === event.id ? { ...member, away: Boolean(event.away) } : member)
       room.paused = room.members.some(member => member.away)
       room.awayHistory = [...room.awayHistory.slice(-49), { id: `${Date.now()}-${event.id}`, name: room.members.find(member => member.id === event.id)?.name ?? '参加者', away: Boolean(event.away), at: Date.now() }]
       room.resume = { readyIds: [] }
+      if (!event.away) room.awayCooldownUntil = Date.now() + 3_000
     }
     if (event.type === 'resume-ready') {
       if (event.id !== socket.data.memberId) return broadcastRoom(code)
