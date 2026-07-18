@@ -47,6 +47,7 @@ const initialMessages: RoomMessage[] = [
 export function useRoomSession() {
   const [roomCode, setRoomCode] = useState(() => localStorage.getItem('hidegames.room-code') ?? 'A7K9P2')
   const [members, setMembers] = useState(memberPalette)
+  const [spectators, setSpectators] = useState<RoomMember[]>([])
   const [messages, setMessages] = useState(initialMessages)
   const [game, setSelectedGame] = useState('tag')
   const [paused, setPausedState] = useState(false)
@@ -92,11 +93,12 @@ export function useRoomSession() {
     const url = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
     const client = io(url, { autoConnect: true, reconnectionAttempts: Infinity, reconnectionDelay: 1000, reconnectionDelayMax: 10_000, timeout: 5000, auth: { token: localStorage.getItem('hidegames.auth-token') ?? undefined } })
     socket.current = client
-    client.on('connect', () => { setConnected(true); client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword }) })
+    client.on('connect', () => { setConnected(true); client.emit('room:join', { code: roomCode, member: localMember, password: roomPassword, spectator: sessionStorage.getItem('hidegames.spectator') === 'true' }) })
     client.on('disconnect', () => setConnected(false))
     client.on('connect_error', () => setConnected(false))
     client.on('room:state', (next) => {
       if (Array.isArray(next.members)) setMembers(next.members)
+      if (Array.isArray(next.spectators)) setSpectators(next.spectators)
       if (Array.isArray(next.messages)) setMessages(next.messages)
       if (typeof next.game === 'string') setSelectedGame(next.game)
       if (typeof next.paused === 'boolean') setPausedState(next.paused)
@@ -129,6 +131,7 @@ export function useRoomSession() {
 
   return {
     members,
+    spectators,
     messages,
     game,
     paused,
@@ -141,10 +144,11 @@ export function useRoomSession() {
     roomError,
     localMember,
     roomCode,
-    joinRoom: (rawCode: string, password = '') => {
+    joinRoom: (rawCode: string, password = '', spectator = false) => {
       const normalized = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
       if (!/^[A-Z0-9]{6}$/.test(normalized)) return false
       sessionStorage.setItem('hidegames.room-password', password)
+      sessionStorage.setItem('hidegames.spectator', String(spectator))
       setRoomPassword(password)
       setRoomError('')
       localStorage.setItem('hidegames.room-code', normalized)

@@ -245,7 +245,7 @@ function hasOnlySafeExternalLinks(state) {
 }
 
 function blankRoom() {
-  return { members: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null } }
+  return { members: [], spectators: [], messages: [], game: 'tag', paused: false, gameState: {}, awayHistory: [], awayCooldownUntil: 0, resume: { readyIds: [] }, access: { passwordHash: null } }
 }
 
 function normalizeHosts(room) {
@@ -311,7 +311,7 @@ io.use((socket, next) => {
 })
 
 io.on('connection', socket => {
-  socket.on('room:join', async ({ code, member, password }) => {
+  socket.on('room:join', async ({ code, member, password, spectator }) => {
     if (!code || !member?.id || !member?.name) return
     if (socket.data.user) { member = { ...member, id: socket.data.user.sub, name: socket.data.user.name } }
     member = {
@@ -324,6 +324,15 @@ io.on('connection', socket => {
     if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
     const room = await hydrateRoom(code)
     if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
+    if (spectator) {
+      const existingSpectator = (room.spectators ?? []).findIndex(item => item.id === member.id)
+      if (existingSpectator < 0 && (room.spectators ?? []).length >= 20) return socket.emit('room:error', { message: '観戦者は20人までです' })
+      socket.data.roomCode = code; socket.data.memberId = member.id; socket.data.spectator = true; socket.join(code)
+      room.spectators ??= []
+      if (existingSpectator >= 0) room.spectators[existingSpectator] = { ...room.spectators[existingSpectator], ...member, connected: true }
+      else room.spectators.push({ ...member, connected: true })
+      return broadcastRoom(code)
+    }
     const existing = room.members.findIndex(item => item.id === member.id)
     if (existing < 0 && room.members.length >= 8) return socket.emit('room:error', { message: 'このルームは8人までです' })
     socket.data.roomCode = code
@@ -346,7 +355,7 @@ io.on('connection', socket => {
     if (!code || !event?.type) return
     if (rateLimit('socket-event', socket.id, 180, 10_000)) return
     const room = getRoom(code)
-    const sender = room.members.find(member => member.id === socket.data.memberId)
+    const sender = room.members.find(member => member.id === socket.data.memberId) ?? room.spectators?.find(member => member.id === socket.data.memberId)
     const isHost = room.members[0]?.id === socket.data.memberId
     if (!sender) return
     if (event.type === 'chat' && typeof event.message?.text === 'string' && event.message.text.trim().length <= 500) {
@@ -519,6 +528,7 @@ io.on('connection', socket => {
     if (hasAnotherConnection) return
     const room = getRoom(code)
     const member = room.members.find(item => item.id === memberId)
+    if (!member && socket.data.spectator) { room.spectators = (room.spectators ?? []).filter(item => item.id !== memberId); return broadcastRoom(code) }
     if (!member) return
     room.members = room.members.map(item => item.id === memberId ? { ...item, connected: false } : item)
     broadcastRoom(code)
