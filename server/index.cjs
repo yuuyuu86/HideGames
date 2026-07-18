@@ -518,6 +518,14 @@ io.on('connection', socket => {
     }
   })
 
+  socket.on('room:voice', ({ joined }) => {
+    const code = socket.data.roomCode
+    if (!code || socket.data.spectator || typeof joined !== 'boolean') return
+    const room = getRoom(code)
+    if (!room.members.some(member => member.id === socket.data.memberId)) return
+    socket.to(code).emit('room:voice', { id: socket.data.memberId, joined })
+  })
+
   socket.on('room:set-password', async ({ password }) => {
     const code = socket.data.roomCode
     if (!code || typeof password !== 'string') return

@@ -145,15 +145,18 @@ function useInterfaceAudio(active: boolean) {
   useEffect(()=>{const audio=context.current;if(!audio)return;if(active){void audio.resume();startBgm(audio);gain.current?.gain.linearRampToValueAtTime(Math.min(.06,bgm/1500),audio.currentTime+.2)}else gain.current?.gain.linearRampToValueAtTime(0,audio.currentTime+.15)},[active,bgm])
   useEffect(()=>()=>{oscillators.current.forEach(oscillator=>oscillator.stop());void context.current?.close()},[])
 }
-function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomMember[]; playerId: string; sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => void; onSignal: (handler: (signal: VoiceSignal) => void) => () => void }) {
+function VoiceChat({ playerId, sendSignal, onSignal, announceVoice, onVoice }: { playerId: string; sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => void; onSignal: (handler: (signal: VoiceSignal) => void) => () => void; announceVoice: (joined: boolean) => void; onVoice: (handler: (event: { id: string; joined: boolean }) => void) => () => void }) {
   const [active, setActive] = useState(false)
   const [muted, setMuted] = useState(false)
   const [status, setStatus] = useState('ボイス未参加')
   const stream = useRef<MediaStream | null>(null)
   const peers = useRef(new Map<string, RTCPeerConnection>())
   const audios = useRef(new Map<string, HTMLAudioElement>())
+  const activeRef = useRef(false)
   const volume=useSavedVolume('voice')
-  const close = () => { peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => { audio.pause();audio.remove() }); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
+  activeRef.current = active
+  const closePeer = (id: string) => { peers.current.get(id)?.close(); peers.current.delete(id); const audio=audios.current.get(id);audio?.pause();audio?.remove();audios.current.delete(id) }
+  const close = () => { if(activeRef.current)announceVoice(false); peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => { audio.pause();audio.remove() }); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
   const peer = (target: string) => {
     const existing = peers.current.get(target); if (existing) return existing
     const turnUrl=import.meta.env.VITE_TURN_URL;const turnUser=import.meta.env.VITE_TURN_USERNAME;const turnCredential=import.meta.env.VITE_TURN_CREDENTIAL
@@ -171,13 +174,18 @@ function VoiceChat({ members, playerId, sendSignal, onSignal }: { members: RoomM
       if (signal.data.type === 'offer') { const answer = await connection.createAnswer(); await connection.setLocalDescription(answer); if (answer) sendSignal(signal.from, answer) }
     } else if ('candidate' in signal.data) await connection.addIceCandidate(signal.data as RTCIceCandidateInit)
   }), [active, onSignal, playerId])
+  useEffect(() => onVoice(async event => {
+    if (!event.joined) return closePeer(event.id)
+    if (!activeRef.current || event.id === playerId) return
+    const connection = peer(event.id)
+    const offer = await connection.createOffer(); await connection.setLocalDescription(offer); sendSignal(event.id, offer)
+  }), [onVoice, playerId, sendSignal])
   useEffect(() => () => close(), [])
   useEffect(()=>{audios.current.forEach(audio=>{audio.volume=volume/100})},[volume])
   const join = async () => {
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
-      setActive(true); setStatus('接続中')
-      for (const member of members.filter(member => member.id !== playerId && playerId < member.id)) { const connection = peer(member.id); const offer = await connection.createOffer(); await connection.setLocalDescription(offer); sendSignal(member.id, offer) }
+      setActive(true); setStatus('接続中'); announceVoice(true)
     } catch { setStatus('マイクを利用できません。OSまたはブラウザの許可を確認してください。') }
   }
   return <section className="voice-dock"><button className={`voice-main ${active ? 'active' : ''}`} onClick={active ? close : join}>{active ? <Mic size={15}/> : <MicOff size={15}/>}<span>{active ? 'ボイス参加中' : 'ボイスに参加'}</span></button>{active && <button className="voice-mute" onClick={()=>{const next=!muted;stream.current?.getAudioTracks().forEach(track=>track.enabled=!next);setMuted(next)}} aria-label="マイクをミュート">{muted?<MicOff size={15}/>:<Mic size={15}/>}</button>}<small>{status}</small></section>
@@ -836,7 +844,7 @@ function App() {
       {page === 'play' && <><header className="play-header"><button className="icon-button" onClick={()=>setPage('room')}><ChevronLeft /></button><span className="room-live"><i />ルーム {room.roomCode}　{room.members.length}人</span><button className="leave-button" onClick={beginAway}><MonitorDown size={17} />離席する <kbd>{shortcut}</kbd></button></header>{selected==='othello'?<Othello paused={room.paused} sharedState={room.gameState.othello} syncState={(state)=>room.setGameState('othello',state)} playerId={room.localMember.id} members={room.members}/>:selected==='gomoku'?<Gomoku paused={room.paused} sharedState={room.gameState.gomoku} syncState={(state)=>room.setGameState('gomoku',state)} playerId={room.localMember.id} members={room.members}/>:selected==='connect4'?<ConnectFour paused={room.paused} sharedState={room.gameState.connect4} syncState={(state)=>room.setGameState('connect4',state)} playerId={room.localMember.id} members={room.members}/>:selected==='oldmaid'?<OldMaidGame paused={room.paused} sharedState={room.gameState.oldmaid} syncState={(state)=>room.setGameState('oldmaid',state)} playerId={room.localMember.id} members={room.members}/>:selected==='uno'?<UnoGame paused={room.paused} sharedState={room.gameState.uno} syncState={(state)=>room.setGameState('uno',state)} playerId={room.localMember.id} members={room.members}/>:selected==='go'?<GoGame paused={room.paused} sharedState={room.gameState.go} syncState={(state)=>room.setGameState('go',state)} playerId={room.localMember.id} members={room.members}/>:selected==='chess'?<ChessGame paused={room.paused} sharedState={room.gameState.chess} syncState={(state)=>room.setGameState('chess',state)} playerId={room.localMember.id} members={room.members}/>:selected==='quiz'?<QuizGame paused={room.paused} sharedState={room.gameState.quiz} syncState={(state)=>room.setGameState('quiz',state)} playerId={room.localMember.id} members={room.members}/>:selected==='memory'?<MemoryGame paused={room.paused} sharedState={room.gameState.memory} syncState={(state)=>room.setGameState('memory',state)} playerId={room.localMember.id} members={room.members}/>:selected==='mines'?<MinesGame paused={room.paused} sharedState={room.gameState.mines} syncState={(state)=>room.setGameState('mines',state)} />:selected==='sugoroku'?<SugorokuGame paused={room.paused} sharedState={room.gameState.sugoroku} syncState={(state)=>room.setGameState('sugoroku',state)} playerId={room.localMember.id} members={room.members}/>:selected==='shiritori'?<ShiritoriGame paused={room.paused} sharedState={room.gameState.shiritori} syncState={(state)=>room.setGameState('shiritori',state)} playerId={room.localMember.id} members={room.members}/>:selected==='drawrelay'?<DrawRelayGame paused={room.paused} sharedState={room.gameState.drawrelay} syncState={(state)=>room.setGameState('drawrelay',state)} playerId={room.localMember.id} members={room.members}/>:selected==='werewolf'||selected==='wordwolf'?<DeductionGame title={current.title} gameKey={selected} paused={room.paused} sharedState={room.gameState[selected]} privateState={room.privateState[selected]} syncState={(state)=>room.setGameState(selected,state)} playerId={room.localMember.id} members={room.members}/>:selected==='tag'?<TagGame paused={room.paused} sharedState={room.gameState.tag} moveTag={room.moveTag} rematch={room.rematchTag} setMode={room.setTagMode} onFinished={(result)=>player.recordMatch('オンライン鬼ごっこ',result,room.gameState.tag)} playerId={room.localMember.id} members={room.members}/>:<RoundGame game={current} paused={room.paused} sharedState={room.gameState[selected]} syncState={(state)=>room.setGameState(selected,state)} playerId={room.localMember.id} members={room.members}/>}</>}
     </main>
     {(page === 'play' || page === 'room') && <ChatDock messages={room.messages} addMessage={room.sendChat} paused={room.paused} />}
-    {(page === 'play' || page === 'room') && <VoiceChat members={room.members} playerId={room.localMember.id} sendSignal={room.sendSignal} onSignal={room.onSignal} />}
+    {(page === 'play' || page === 'room') && <VoiceChat playerId={room.localMember.id} sendSignal={room.sendSignal} onSignal={room.onSignal} announceVoice={room.announceVoice} onVoice={room.onVoice} />}
     {room.paused && <PauseOverlay awayNames={room.members.filter(member => member.away).map(member => member.name)} resume={room.resume} playerId={room.localMember.id} memberCount={room.members.length} onReady={room.setResumeReady} sendMessage={room.sendChat} />}
     {(page === 'room' || page === 'play') && !room.connected && <ConnectionOverlay />}
     {showShortcut && <div className="shortcut-toast"><MonitorDown size={16} />離席モードを開始しました</div>}

@@ -21,6 +21,7 @@ export type RoomMessage = {
 
 export type AwayHistoryItem = { id: string; name: string; away: boolean; at: number }
 export type ResumeState = { readyIds: string[]; startsAt?: number }
+export type VoiceEvent = { id: string; joined: boolean }
 
 type Event =
   | { type: 'chat'; message: RoomMessage }
@@ -64,6 +65,7 @@ export function useRoomSession() {
   const socket = useRef<Socket | null>(null)
   const joinDetails = useRef({ roomCode, roomPassword })
   const signalHandlers = useRef(new Set<(signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void>())
+  const voiceHandlers = useRef(new Set<(event: VoiceEvent) => void>())
   const localMember = useMemo(() => {
     const existing = sessionStorage.getItem('hidegames.member-id')
     const id = existing ?? `player-${crypto.randomUUID()}`
@@ -116,6 +118,7 @@ export function useRoomSession() {
     })
     client.on('room:private', ({ game, state }) => { if (typeof game === 'string') setPrivateState(current => ({ ...current, [game]: state })) })
     client.on('room:signal', (signal) => { if (signal?.from && signal?.data) signalHandlers.current.forEach(handler => handler(signal)) })
+    client.on('room:voice', (event) => { if (typeof event?.id === 'string' && typeof event.joined === 'boolean') voiceHandlers.current.forEach(handler => handler(event)) })
     return () => { client.close() }
   }, [authRevision, localMember])
 
@@ -181,6 +184,8 @@ export function useRoomSession() {
     removeMember: (targetId: string) => socket.current?.connected && socket.current.emit('room:kick', { targetId }),
     sendSignal: (target: string, data: RTCSessionDescriptionInit | RTCIceCandidateInit) => socket.current?.connected && socket.current.emit('room:signal', { target, data }),
     onSignal: (handler: (signal: { from: string; target?: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit }) => void) => { signalHandlers.current.add(handler); return () => signalHandlers.current.delete(handler) },
+    announceVoice: (joined: boolean) => socket.current?.connected && socket.current.emit('room:voice', { joined }),
+    onVoice: (handler: (event: VoiceEvent) => void) => { voiceHandlers.current.add(handler); return () => voiceHandlers.current.delete(handler) },
     moveTag: (position: { x: number; y: number }) => {
       if (socket.current?.connected) socket.current.emit('room:event', { type: 'tag-move', position })
       else publish({ type: 'game-state', game: 'tag', state: { positions: { [localMember.id]: position }, collected: [] } })
