@@ -10,6 +10,8 @@ const port = Number(process.env.PORT || 3001)
 const jwtSecret = process.env.AUTH_JWT_SECRET || null
 const youtubeApiKey = process.env.YOUTUBE_API_KEY || null
 const distDirectory = path.resolve(__dirname, '..', 'dist')
+const startedAt = Date.now()
+const release = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local'
 const requestLimits = new Map()
 const sendJson = (response, status, body, headers = {}) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', ...headers }); response.end(JSON.stringify(body)) }
 const readJson = request => new Promise((resolve, reject) => { let body = ''; request.on('data', chunk => { body += chunk; if (body.length > 20_000) request.destroy() }); request.on('end', () => { try { resolve(body ? JSON.parse(body) : {}) } catch { reject(new Error('invalid JSON')) } }); request.on('error', reject) })
@@ -43,7 +45,7 @@ function serveStatic(request, response) {
 }
 async function handleHttp(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {})
-  if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret) })
+  if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret), uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), rooms: rooms.size, sockets: io.engine.clientsCount, release })
   const url = new URL(request.url, 'http://localhost')
   if (url.pathname === '/api/youtube/search') {
     if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' })
