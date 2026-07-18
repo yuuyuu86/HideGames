@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bell, CheckCircle2, ChevronDown, ChevronLeft, Circle, CircleHelp, Copy, Crown, Gamepad2,
-  Home, MessageCircle, MonitorDown, Pause, Play, Plus, Radio, Search,
-  Link as LinkIcon, Mic, MicOff, Settings, Shield, Sparkles, Swords, Users, Video, X,
-} from 'lucide-react'
-import { FaChessBoard, FaDoorOpen, FaGem, FaKey, FaMoon, FaPaperPlane, FaPersonRunning, FaRegCircle, FaRegStar, FaUserSecret } from 'react-icons/fa6'
+  FaRegBell as Bell, FaCircleCheck as CheckCircle2, FaChevronDown as ChevronDown, FaChevronLeft as ChevronLeft,
+  FaRegCircle as Circle, FaCircleQuestion as CircleHelp, FaCopy as Copy, FaCrown as Crown, FaGamepad as Gamepad2,
+  FaHouse as Home, FaRegCommentDots as MessageCircle, FaDisplay as MonitorDown, FaPause as Pause, FaPlay as Play,
+  FaPlus as Plus, FaTowerBroadcast as Radio, FaMagnifyingGlass as Search, FaLink as LinkIcon, FaMicrophone as Mic,
+  FaMicrophoneSlash as MicOff, FaGear as Settings, FaShield as Shield, FaWandMagicSparkles as Sparkles, FaUsers as Users,
+  FaVideo as Video, FaXmark as X, FaChessBoard, FaDoorOpen, FaGem, FaKey, FaMoon, FaPaperPlane, FaPersonRunning,
+  FaRegStar, FaUserSecret,
+} from 'react-icons/fa6'
 import { useRoomSession, type RoomMember } from './useRoomSession'
 import { usePlayerData, type PlayerData } from './usePlayerData'
 import { evaluateMahjongWin, type MahjongWinInfo } from './mahjong'
@@ -20,7 +23,7 @@ type DrawLine = { points: DrawPoint[]; color: string }
 
 const games = [
   { key: 'tag', title: 'オンライン鬼ごっこ', players: '2–8人', time: '3–5分', kind: 'アクション', Icon: FaPersonRunning, ready: true, description: '逃げる、追いかける、隠れる。短時間で盛り上がる2D鬼ごっこ。' },
-  { key: 'othello', title: 'オセロ', players: '2人', time: '5–15分', kind: 'ボード', Icon: FaRegCircle, ready: true, description: '石を挟んで自分の色に変える、定番の頭脳戦。' },
+  { key: 'othello', title: 'オセロ', players: '2人', time: '5–15分', kind: 'ボード', Icon: Circle, ready: true, description: '石を挟んで自分の色に変える、定番の頭脳戦。' },
   { key: 'gomoku', title: '五目並べ', players: '2人', time: '3–10分', kind: 'ボード', Icon: FaRegStar, ready: true, description: '先に5つ並べた方の勝ち。シンプルで奥深い。' },
   { key: 'connect4', title: '四目並べ', players: '2人', time: '3–10分', kind: 'ボード', Icon: FaChessBoard, ready: true, description: '縦・横・斜めに4つ並べる、短時間の戦略ゲーム。' },
   { key: 'shiritori', title: 'しりとり', players: '2–8人', time: '5–15分', kind: 'パーティー', Icon: FaRegStar, ready: true, description: '言葉をつなげる、みんなで遊べる定番パーティーゲーム。' },
@@ -29,7 +32,7 @@ const games = [
   { key: 'werewolf', title: '人狼', players: '4–12人', time: '15–30分', kind: 'パーティー', Icon: FaMoon, ready: true, description: '正体を隠して議論と投票を行う会話ゲーム。' },
   { key: 'shogi', title: '将棋', players: '2人', time: '10–30分', kind: 'ボード', Icon: FaChessBoard, ready: true, description: '共有盤面で駒の手を記録して対局する。' },
   { key: 'chess', title: 'チェス', players: '2人', time: '10–30分', kind: 'ボード', Icon: FaChessBoard, ready: true, description: '戦略を考えながら一手ずつ進める。' },
-  { key: 'go', title: '囲碁', players: '2人', time: '15–40分', kind: 'ボード', Icon: FaRegCircle, ready: true, description: '陣地を囲う伝統的なボードゲーム。' },
+  { key: 'go', title: '囲碁', players: '2人', time: '15–40分', kind: 'ボード', Icon: Circle, ready: true, description: '陣地を囲う伝統的なボードゲーム。' },
   { key: 'daifugo', title: '大富豪', players: '2–6人', time: '10–20分', kind: 'カード', Icon: FaRegStar, ready: true, description: '手札を早く出し切るカードゲーム。' },
   { key: 'uno', title: 'UNO風カードゲーム', players: '2–8人', time: '10–20分', kind: 'カード', Icon: FaRegStar, ready: true, description: '色と数字を合わせてカードを出そう。' },
   { key: 'oldmaid', title: 'ババ抜き', players: '2–6人', time: '5–15分', kind: 'カード', Icon: FaRegStar, ready: true, description: 'ジョーカーを最後まで持たないようにする。' },
