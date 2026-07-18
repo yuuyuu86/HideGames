@@ -1,6 +1,14 @@
 export type MahjongTile = { suit: 'm' | 'p' | 's' | 'z'; rank: number }
 export type MahjongWinType = 'tsumo' | 'ron'
 export type MahjongWinInfo = { yaku: string[]; han: number; fu: number; points: number; limit?: string }
+export type MahjongWinOptions = {
+  winType: MahjongWinType
+  riichi?: boolean
+  winningTile?: MahjongTile
+  seatWind?: 1 | 2 | 3 | 4
+  roundWind?: 1 | 2 | 3 | 4
+  doraIndicators?: MahjongTile[]
+}
 
 type Group = { kind: 'pair' | 'sequence' | 'triplet' | 'quad'; tiles: MahjongTile[]; open: boolean }
 
@@ -64,15 +72,36 @@ function standardDecompositions(hand: MahjongTile[], melds: MahjongTile[][]): Gr
   return results
 }
 
-function calculateFu(groups: Group[], winType: MahjongWinType, sevenPairs: boolean) {
+function sameTile(left: MahjongTile, right: MahjongTile) { return left.suit === right.suit && left.rank === right.rank }
+
+function waitFu(groups: Group[], winningTile?: MahjongTile) {
+  if (!winningTile) return 0
+  return Math.max(0, ...groups.map(group => {
+    if (!group.tiles.some(tile => sameTile(tile, winningTile))) return 0
+    if (group.kind === 'pair') return 2
+    if (group.kind !== 'sequence') return 0
+    const ranks = group.tiles.map(tile => tile.rank).sort((left, right) => left - right)
+    if (winningTile.rank === ranks[1]) return 2
+    if ((ranks[0] === 1 && winningTile.rank === 3) || (ranks[0] === 7 && winningTile.rank === 7)) return 2
+    return 0
+  }))
+}
+
+function pairFu(tile: MahjongTile | undefined, options: MahjongWinOptions) {
+  if (!tile || tile.suit !== 'z') return 0
+  if (tile.rank >= 5) return 2
+  return (tile.rank === options.seatWind ? 2 : 0) + (tile.rank === options.roundWind ? 2 : 0)
+}
+
+function calculateFu(groups: Group[], options: MahjongWinOptions, sevenPairs: boolean) {
   if (sevenPairs) return 25
   const pair = groups.find(group => group.kind === 'pair')
   const nonPair = groups.filter(group => group.kind !== 'pair')
   const allSequences = nonPair.every(group => group.kind === 'sequence')
-  const valuePair = Boolean(pair?.tiles[0].suit === 'z' && pair.tiles[0].rank >= 5)
-  if (allSequences && !valuePair) return winType === 'tsumo' ? 20 : 30
-  let fu = 20 + (winType === 'tsumo' ? 2 : nonPair.every(group => !group.open) ? 10 : 0)
-  if (valuePair) fu += 2
+  const pairValue = pairFu(pair?.tiles[0], options)
+  if (allSequences && pairValue === 0 && waitFu(groups, options.winningTile) === 0) return options.winType === 'tsumo' ? 20 : 30
+  let fu = 20 + (options.winType === 'tsumo' ? 2 : nonPair.every(group => !group.open) ? 10 : 0)
+  fu += pairValue + waitFu(groups, options.winningTile)
   nonPair.filter(group => group.kind === 'triplet' || group.kind === 'quad').forEach(group => {
     const terminal = isTerminalOrHonor(group.tiles[0])
     const closed = !group.open
@@ -80,6 +109,14 @@ function calculateFu(groups: Group[], winType: MahjongWinType, sevenPairs: boole
     else fu += terminal ? (closed ? 32 : 16) : (closed ? 16 : 8)
   })
   return Math.ceil(fu / 10) * 10
+}
+
+function doraForIndicator(indicator: MahjongTile): MahjongTile {
+  if (indicator.suit === 'z') {
+    if (indicator.rank >= 1 && indicator.rank <= 4) return { suit: 'z', rank: indicator.rank === 4 ? 1 : indicator.rank + 1 }
+    return { suit: 'z', rank: indicator.rank === 7 ? 5 : indicator.rank + 1 }
+  }
+  return { suit: indicator.suit, rank: indicator.rank === 9 ? 1 : indicator.rank + 1 }
 }
 
 function pointInfo(han: number, fu: number) {
@@ -93,7 +130,7 @@ function pointInfo(han: number, fu: number) {
   return { points: Math.ceil(base * 4 / 100) * 100, limit }
 }
 
-export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], options: { winType: MahjongWinType; riichi?: boolean }): MahjongWinInfo | null {
+export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], options: MahjongWinOptions): MahjongWinInfo | null {
   const all = [...hand, ...melds.flat()]
   const counts = countTiles(hand)
   const sevenPairs = melds.length === 0 && counts.size === 7 && [...counts.values()].every(count => count === 2)
@@ -126,6 +163,7 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
       const triplets = groupsWithoutPair.filter(group => group.kind === 'triplet' || group.kind === 'quad')
       const pair = groups.find(group => group.kind === 'pair')
       if (groupsWithoutPair.every(group => group.kind === 'triplet' || group.kind === 'quad')) add('対々和', 2)
+      const pairValue = pairFu(pair?.tiles[0], options)
       if (closed) {
         const duplicateSequences = new Map<string, number>()
         sequences.forEach(group => { const value = group.tiles.map(key).join(''); duplicateSequences.set(value, (duplicateSequences.get(value) ?? 0) + 1) })
@@ -133,6 +171,7 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
         if (pairs >= 2) add('二盃口', 3)
         else if (pairs === 1) add('一盃口', 1)
       }
+      if (closed && sequences.length === 4 && pairValue === 0 && waitFu(groups, options.winningTile) === 0) add('平和', 1)
       for (const rank of [1, 4, 7]) {
         if (['m', 'p', 's'].every(suit => sequences.some(group => group.tiles[0].suit === suit && group.tiles[0].rank === rank))) { add('一気通貫', closed ? 2 : 1); break }
       }
@@ -153,13 +192,19 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
       if (dragonTriplets.length === 3) yakuman('大三元')
       if (dragonTriplets.length === 2 && pair?.tiles[0].suit === 'z' && pair.tiles[0].rank >= 5) add('小三元', 2)
       const windTriplets = triplets.filter(group => group.tiles[0].suit === 'z' && group.tiles[0].rank <= 4)
+      windTriplets.forEach(group => {
+        if (group.tiles[0].rank === options.seatWind) add(`自風 ${['東', '南', '西', '北'][group.tiles[0].rank - 1]}`, 1)
+        if (group.tiles[0].rank === options.roundWind) add(`場風 ${['東', '南', '西', '北'][group.tiles[0].rank - 1]}`, 1)
+      })
       if (windTriplets.length === 4) yakuman('大四喜')
       if (windTriplets.length === 3 && pair?.tiles[0].suit === 'z' && pair.tiles[0].rank <= 4) yakuman('小四喜')
       if (triplets.length === 4 && closed && options.winType === 'tsumo') yakuman('四暗刻')
       if (triplets.filter(group => group.kind === 'quad').length === 4) yakuman('四槓子')
     }
     if (!yaku.length) return null
-    const fu = calculateFu(groups, options.winType, sevenPairs)
+    const dora = (options.doraIndicators ?? []).map(doraForIndicator).reduce((total, doraTile) => total + all.filter(tile => sameTile(tile, doraTile)).length, 0)
+    if (dora) add(`ドラ ${dora}`, dora)
+    const fu = calculateFu(groups, options, sevenPairs)
     const points = pointInfo(han, fu)
     return { yaku, han, fu, ...points }
   }).filter((value): value is MahjongWinInfo => value !== null)
