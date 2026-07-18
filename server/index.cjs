@@ -9,8 +9,19 @@ const database = require('./db.cjs')
 const port = Number(process.env.PORT || 3001)
 const jwtSecret = process.env.AUTH_JWT_SECRET || null
 const distDirectory = path.resolve(__dirname, '..', 'dist')
-const sendJson = (response, status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }); response.end(JSON.stringify(body)) }
+const requestLimits = new Map()
+const sendJson = (response, status, body, headers = {}) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', ...headers }); response.end(JSON.stringify(body)) }
 const readJson = request => new Promise((resolve, reject) => { let body = ''; request.on('data', chunk => { body += chunk; if (body.length > 20_000) request.destroy() }); request.on('end', () => { try { resolve(body ? JSON.parse(body) : {}) } catch { reject(new Error('invalid JSON')) } }); request.on('error', reject) })
+const clientKey = request => String(request.headers['cf-connecting-ip'] || request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'unknown').split(',')[0].trim()
+function rateLimit(bucket, key, maximum, windowMs) {
+  const now = Date.now(); const id = `${bucket}:${key}`; const current = requestLimits.get(id)
+  if (!current || current.resetAt <= now) { requestLimits.set(id, { count: 1, resetAt: now + windowMs }); return null }
+  if (current.count >= maximum) return Math.max(1, Math.ceil((current.resetAt - now) / 1000))
+  current.count += 1
+  return null
+}
+function clearRateLimit(bucket, key) { requestLimits.delete(`${bucket}:${key}`) }
+setInterval(() => { const now = Date.now(); for (const [id, value] of requestLimits) if (value.resetAt <= now) requestLimits.delete(id) }, 60_000).unref()
 function readAuthenticatedUser(request) {
   if (!jwtSecret) return null
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? '')
@@ -44,6 +55,8 @@ async function handleHttp(request, response) {
       if (url.pathname === '/api/matches' && request.method === 'POST') {
         const user = readAuthenticatedUser(request)
         if (!user?.sub) return sendJson(response, 401, { error: 'ログインが必要です' })
+        const retryAfter = rateLimit('match-write', user.sub, 60, 60_000)
+        if (retryAfter) return sendJson(response, 429, { error: '記録の送信が多すぎます。少し待ってからもう一度試してください' }, { 'Retry-After': String(retryAfter) })
         const { game, result, snapshot } = await readJson(request)
         if (typeof game !== 'string' || !game.trim() || game.length > 80 || !['win', 'loss', 'draw'].includes(result)) return sendJson(response, 400, { error: '戦績の内容が正しくありません' })
         if (snapshot !== undefined && JSON.stringify(snapshot).length > 180_000) return sendJson(response, 413, { error: 'リプレイの記録が大きすぎます' })
@@ -60,6 +73,9 @@ async function handleHttp(request, response) {
   }
   if (request.method !== 'POST' || !['/auth/signup', '/auth/login'].includes(url.pathname)) return serveStatic(request, response) || sendJson(response, 404, { error: 'Not found' })
   if (!database.enabled || !jwtSecret) return sendJson(response, 503, { error: '認証サービスはまだ設定されていません' })
+  const identity = clientKey(request)
+  const retryAfter = rateLimit('auth', identity, 10, 15 * 60_000)
+  if (retryAfter) return sendJson(response, 429, { error: '認証の試行回数が多すぎます。しばらく待ってから再試行してください' }, { 'Retry-After': String(retryAfter) })
   try {
     const { email: rawEmail, password, displayName } = await readJson(request)
     const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : ''
@@ -75,6 +91,7 @@ async function handleHttp(request, response) {
       user = stored
     }
     const token = jwt.sign({ sub: user.id, name: user.display_name }, jwtSecret, { expiresIn: '7d', issuer: 'hidegames' })
+    clearRateLimit('auth', identity)
     return sendJson(response, 200, { token, user: { id: user.id, email: user.email, displayName: user.display_name } })
   } catch (error) { return sendJson(response, error.code === '23505' ? 409 : 500, { error: error.code === '23505' ? 'このメールアドレスは登録済みです' : '認証処理に失敗しました' }) }
 }
