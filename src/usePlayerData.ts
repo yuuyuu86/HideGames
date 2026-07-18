@@ -21,6 +21,12 @@ const initial: PlayerData = {
   replays: [],
 }
 
+const storageKey = () => `hidegames.player-data.${localStorage.getItem('hidegames.account-id') || 'guest'}`
+const readStoredData = () => {
+  try { return { ...initial, ...JSON.parse(localStorage.getItem(storageKey()) ?? '{}') } as PlayerData }
+  catch { return { ...initial } }
+}
+
 const apiBase = () => {
   const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
   return import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
@@ -32,10 +38,9 @@ const fromServer = (saved: { id: string; game: string; result: MatchRecord['resu
 }
 
 export function usePlayerData() {
-  const [data, setData] = useState<PlayerData>(() => {
-    try { return { ...initial, ...JSON.parse(localStorage.getItem('hidegames.player-data') ?? '{}') } } catch { return initial }
-  })
-  useEffect(() => localStorage.setItem('hidegames.player-data', JSON.stringify(data)), [data])
+  const [data, setData] = useState<PlayerData>(readStoredData)
+  const [activeStorageKey, setActiveStorageKey] = useState(storageKey)
+  useEffect(() => localStorage.setItem(activeStorageKey, JSON.stringify(data)), [activeStorageKey, data])
   useEffect(() => {
     const load = async () => {
       const token = localStorage.getItem('hidegames.auth-token')
@@ -50,9 +55,14 @@ export function usePlayerData() {
         setData(current => ({ ...current, matches: records.map(item => item.match), replays: records.map(item => item.replay) }))
       } catch { /* Offline use keeps the local history. */ }
     }
+    const onAuth = () => {
+      setActiveStorageKey(storageKey())
+      setData(readStoredData())
+      void load()
+    }
     void load()
-    window.addEventListener('hidegames-auth', load)
-    return () => window.removeEventListener('hidegames-auth', load)
+    window.addEventListener('hidegames-auth', onAuth)
+    return () => window.removeEventListener('hidegames-auth', onAuth)
   }, [])
   const updateProfile = useCallback((displayName: string) => setData(current => ({ ...current, displayName: displayName.trim() || current.displayName })), [])
   const recordMatch = useCallback((game: string, result: MatchRecord['result'], snapshot?: unknown) => {
