@@ -330,7 +330,10 @@ io.use((socket, next) => {
 
 io.on('connection', socket => {
   socket.on('room:join', async ({ code, member, password, spectator }) => {
-    if (!code || !member?.id || !member?.name) return
+    const normalizedCode = typeof code === 'string' ? code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : ''
+    if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) return socket.emit('room:error', { message: 'ルームコードは英数字6文字で入力してください' })
+    code = normalizedCode
+    if (!member?.id || !member?.name) return
     if (socket.data.user) { member = { ...member, id: socket.data.user.sub, name: socket.data.user.name } }
     member = {
       ...member,
@@ -340,6 +343,26 @@ io.on('connection', socket => {
       ready: Boolean(member.ready),
     }
     if (!member.id || !member.name) return socket.emit('room:error', { message: '参加者情報が正しくありません' })
+    const previousCode = socket.data.roomCode
+    const changingMembership = previousCode && (previousCode !== code || Boolean(socket.data.spectator) !== Boolean(spectator))
+    if (changingMembership) {
+      const previousRoom = getRoom(previousCode)
+      if (socket.data.spectator) previousRoom.spectators = (previousRoom.spectators ?? []).filter(item => item.id !== socket.data.memberId)
+      else {
+        const wasHost = previousRoom.members[0]?.id === socket.data.memberId
+        previousRoom.members = previousRoom.members.filter(item => item.id !== socket.data.memberId)
+        previousRoom.resume = { readyIds: previousRoom.resume.readyIds.filter(id => id !== socket.data.memberId) }
+        if (previousRoom.members.length) {
+          normalizeHosts(previousRoom)
+          if (wasHost) announceHostTransfer(previousRoom, previousRoom.members[0])
+        } else rooms.delete(previousCode)
+      }
+      socket.leave(previousCode)
+      delete socket.data.roomCode
+      delete socket.data.memberId
+      delete socket.data.spectator
+      if (rooms.has(previousCode)) broadcastRoom(previousCode)
+    }
     const room = await hydrateRoom(code)
     if (room.access?.passwordHash && !await bcrypt.compare(typeof password === 'string' ? password : '', room.access.passwordHash)) return socket.emit('room:error', { message: 'このルームにはパスワードが必要です' })
     if (spectator) {
