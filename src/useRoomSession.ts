@@ -115,6 +115,7 @@ export function useRoomSession() {
       if (Array.isArray(next.awayHistory)) setAwayHistory(next.awayHistory)
       if (next.resume && typeof next.resume === 'object') setResume(next.resume)
       if (typeof next.access?.locked === 'boolean') setRoomLocked(next.access.locked)
+      if (typeof next.code === 'string' && next.code === joinDetails.current.roomCode && Array.isArray(next.members) && next.members.some((member: { id?: unknown }) => member?.id === localMember.id)) setInvitations(current => current.filter(invitation => invitation.code !== next.code))
     })
     client.on('room:error', ({ message }) => {
       const nextMessage = typeof message === 'string' ? message : 'ルームに参加できませんでした'
