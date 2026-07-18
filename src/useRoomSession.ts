@@ -8,6 +8,7 @@ export type RoomMember = {
   ready: boolean
   host?: boolean
   away?: boolean
+  connected?: boolean
 }
 
 export type RoomMessage = {

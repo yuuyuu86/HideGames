@@ -99,6 +99,8 @@ const server = http.createServer(handleHttp)
 const io = new Server(server, { cors: { origin: true, methods: ['GET', 'POST'] } })
 const rooms = new Map()
 const reports = []
+const disconnectTimers = new Map()
+const disconnectGraceMs = Math.max(1_000, Number(process.env.DISCONNECT_GRACE_MS || 15_000))
 const tagGems = [{ x: 3, y: 1 }, { x: 8, y: 2 }, { x: 6, y: 6 }, { x: 10, y: 4 }]
 const tagWall = (x, y) => (x === 4 && y > 1 && y < 6) || (y === 3 && x > 6 && x < 10)
 const sharedStateGames = new Set(['memo', 'drawing', 'youtube', 'tournament'])
@@ -129,6 +131,13 @@ function blankRoom() {
 
 function normalizeHosts(room) {
   room.members = room.members.map((member, index) => ({ ...member, host: index === 0 }))
+}
+
+const disconnectKey = (code, memberId) => `${code}:${memberId}`
+function cancelPendingDisconnect(code, memberId) {
+  const key = disconnectKey(code, memberId); const timer = disconnectTimers.get(key)
+  if (timer) clearTimeout(timer)
+  disconnectTimers.delete(key)
 }
 
 function announceHostTransfer(room, member) {
@@ -184,9 +193,10 @@ io.on('connection', socket => {
     socket.data.roomCode = code
     socket.data.memberId = member.id
     socket.join(code)
+    cancelPendingDisconnect(code, member.id)
     const existing = room.members.findIndex(item => item.id === member.id)
-    if (existing >= 0) room.members[existing] = { ...room.members[existing], ...member }
-    else room.members.push(member)
+    if (existing >= 0) room.members[existing] = { ...room.members[existing], ...member, connected: true }
+    else room.members.push({ ...member, connected: true })
     normalizeHosts(room)
     if (room.game === 'tag') {
       const state = tagState(room)
@@ -313,16 +323,30 @@ io.on('connection', socket => {
     const code = socket.data.roomCode
     const memberId = socket.data.memberId
     if (!code || !memberId) return
+    const hasAnotherConnection = [...io.sockets.sockets.values()].some(other => other.id !== socket.id && other.data.roomCode === code && other.data.memberId === memberId)
+    if (hasAnotherConnection) return
     const room = getRoom(code)
-    const wasHost = room.members[0]?.id === memberId
-    room.members = room.members.filter(member => member.id !== memberId)
-    room.resume = { readyIds: room.resume.readyIds.filter(id => id !== memberId) }
-    if (room.members.length === 0) rooms.delete(code)
-    else {
-      normalizeHosts(room)
-      if (wasHost) announceHostTransfer(room, room.members[0])
-      broadcastRoom(code)
-    }
+    const member = room.members.find(item => item.id === memberId)
+    if (!member) return
+    room.members = room.members.map(item => item.id === memberId ? { ...item, connected: false } : item)
+    broadcastRoom(code)
+    const key = disconnectKey(code, memberId)
+    cancelPendingDisconnect(code, memberId)
+    disconnectTimers.set(key, setTimeout(() => {
+      disconnectTimers.delete(key)
+      const current = rooms.get(code)
+      const stillDisconnected = current?.members.find(item => item.id === memberId && item.connected === false)
+      if (!current || !stillDisconnected) return
+      const wasHost = current.members[0]?.id === memberId
+      current.members = current.members.filter(item => item.id !== memberId)
+      current.resume = { readyIds: current.resume.readyIds.filter(id => id !== memberId) }
+      if (current.members.length === 0) rooms.delete(code)
+      else {
+        normalizeHosts(current)
+        if (wasHost) announceHostTransfer(current, current.members[0])
+        broadcastRoom(code)
+      }
+    }, disconnectGraceMs))
   })
 })
 
