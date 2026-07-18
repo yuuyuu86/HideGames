@@ -1,10 +1,14 @@
 const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron')
 const path = require('path')
+const fs = require('fs')
 
 let mainWindow
 let hidden = false
 let awayShortcut = 'CommandOrControl+Shift+H'
 let pendingRoomCode = null
+const shortcutSettingsPath = () => path.join(app.getPath('userData'), 'hidegames-settings.json')
+function loadAwayShortcut() { try { const saved = JSON.parse(fs.readFileSync(shortcutSettingsPath(), 'utf8')); return typeof saved.awayShortcut === 'string' && saved.awayShortcut ? saved.awayShortcut : awayShortcut } catch { return awayShortcut } }
+function saveAwayShortcut() { try { fs.writeFileSync(shortcutSettingsPath(), JSON.stringify({ awayShortcut }), { mode: 0o600 }) } catch (error) { console.error('Could not save away shortcut:', error.message) } }
 const send = (event) => mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.send(event)
 function openRoomLink(url) { const code = typeof url === 'string' ? url.match(/^hidegames:\/\/room\/([A-Z0-9]{6})$/i)?.[1]?.toUpperCase() : null; if (!code) return; pendingRoomCode = code; send('room-link', code) }
 function showWindow() { if (!mainWindow) return; mainWindow.show(); mainWindow.focus(); hidden = false; send('away-returned') }
@@ -19,7 +23,7 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => { if (pendingRoomCode) send('room-link', pendingRoomCode) })
 }
 app.on('open-url', (event, url) => { event.preventDefault(); openRoomLink(url) })
-app.whenReady().then(() => { app.setAsDefaultProtocolClient('hidegames'); createWindow(); globalShortcut.register(awayShortcut, toggleAway); const url = process.argv.find(arg => arg.startsWith('hidegames://')); if (url) openRoomLink(url); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() }) })
+app.whenReady().then(() => { app.setAsDefaultProtocolClient('hidegames'); awayShortcut = loadAwayShortcut(); createWindow(); if (!globalShortcut.register(awayShortcut, toggleAway)) { awayShortcut = 'CommandOrControl+Shift+H'; globalShortcut.register(awayShortcut, toggleAway) } const url = process.argv.find(arg => arg.startsWith('hidegames://')); if (url) openRoomLink(url); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() }) })
 ipcMain.handle('hide-window', hideWindow)
 ipcMain.handle('show-window', showWindow)
 ipcMain.handle('set-window-brightness', () => ({ supported: false }))
@@ -29,6 +33,7 @@ ipcMain.handle('set-away-shortcut', (_event, accelerator) => {
   globalShortcut.unregister(awayShortcut)
   if (!globalShortcut.register(next, toggleAway)) { globalShortcut.register(awayShortcut, toggleAway); return { ok: false, message: 'このキーは他のアプリまたはOSで使用されています' } }
   awayShortcut = next
+  saveAwayShortcut()
   return { ok: true, accelerator: awayShortcut }
 })
 app.on('will-quit', () => globalShortcut.unregisterAll())
