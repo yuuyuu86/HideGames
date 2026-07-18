@@ -235,6 +235,9 @@ function isMahjongCall(room, previous, nextState, senderId) {
   if (!discard?.owner || discard.owner === senderId || !call || !['pon', 'chi', 'kan'].includes(call.kind)) return false
   if (!sameState(previous.scores, nextState.scores) || (previous.riichiPot ?? 0) !== (nextState.riichiPot ?? 0) || nextState.winner || nextState.winInfo || nextState.draw) return false
   if (nextState.turn !== senderId || (nextState.melds?.[senderId]?.length ?? 0) !== (previous.melds?.[senderId]?.length ?? 0) + 1) return false
+  const beforeOpenMelds = previous.openMelds?.[senderId] ?? [], afterOpenMelds = nextState.openMelds?.[senderId] ?? []
+  if (!Array.isArray(afterOpenMelds) || afterOpenMelds.length !== beforeOpenMelds.length + 1 || afterOpenMelds.at(-1) !== true) return false
+  for (const member of room.members) if (member.id !== senderId && !sameState(previous.openMelds?.[member.id], nextState.openMelds?.[member.id])) return false
   const beforeHand = previous.hands?.[senderId] ?? []
   const afterHand = nextState.hands?.[senderId] ?? []
   const tilesUsed = call.kind === 'kan' ? 3 : 2
@@ -269,7 +272,7 @@ function canUpdateMahjongDiscard(room, previous, nextState, senderId) {
   if (!expectedTurn || nextState.turn !== expectedTurn || afterDiscards.length !== beforeDiscards.length + 1 || !discard || nextState.lastDiscard?.owner !== senderId || mahjongTileKey(nextState.lastDiscard.tile) !== mahjongTileKey(discard)) return false
   if (afterHand.length !== beforeHand.length - (drew ? 0 : 1) || !sameState(nextState.wall, drew ? previous.wall.slice(1) : previous.wall)) return false
   for (const member of room.members) if (member.id !== senderId && !sameState(beforeHands[member.id], afterHands[member.id])) return false
-  if (!sameState(previous.melds, nextState.melds)) return false
+  if (!sameState(previous.melds, nextState.melds) || !sameState(previous.openMelds, nextState.openMelds)) return false
   const beforeOwnDiscards = previous.discardedBy?.[senderId] ?? [], afterOwnDiscards = nextState.discardedBy?.[senderId] ?? []
   if (!Array.isArray(afterOwnDiscards) || afterOwnDiscards.length !== beforeOwnDiscards.length + 1 || mahjongTileKey(afterOwnDiscards.at(-1)) !== mahjongTileKey(discard)) return false
   for (const member of room.members) if (member.id !== senderId && !sameState(previous.discardedBy?.[member.id], nextState.discardedBy?.[member.id])) return false
@@ -281,7 +284,7 @@ function canUpdateMahjongDiscard(room, previous, nextState, senderId) {
 }
 
 function canUpdateMahjongWin(room, previous, nextState, senderId) {
-  if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
+  if (nextState.winner !== senderId || !['ron', 'tsumo'].includes(nextState.winType) || !nextState.winInfo?.payments || !sameState(previous.hands, nextState.hands) || !sameState(previous.melds, nextState.melds) || !sameState(previous.openMelds, nextState.openMelds) || !sameState(previous.wall, nextState.wall) || !sameState(previous.discards, nextState.discards) || !sameState(previous.discardedBy, nextState.discardedBy)) return false
   const payments = nextState.winInfo.payments
   const dealerRon = payments?.ron?.dealer, nonDealerRon = payments?.ron?.nonDealer, dealerPays = payments?.tsumo?.dealerPays, nonDealerPays = payments?.tsumo?.nonDealerPays
   if (![dealerRon, nonDealerRon, dealerPays, nonDealerPays].every(value => Number.isInteger(value) && value >= 100 && value <= 48_000) || dealerRon !== dealerPays * 3 || nonDealerRon !== nonDealerPays * 4) return false
@@ -304,6 +307,37 @@ function canUpdateMahjongWin(room, previous, nextState, senderId) {
     scores[senderId] += previous.riichiPot ?? 0
   }
   return sameState(scores, nextState.scores) && (nextState.riichiPot ?? 0) === (previous.riichiPot ?? 0)
+}
+
+function isMahjongSelfKan(room, previous, nextState, senderId) {
+  const kind = nextState.calledMeld?.kind
+  if (!['ankan', 'kakan'].includes(kind) || previous.turn !== senderId || nextState.turn !== senderId || nextState.winner || nextState.winInfo || nextState.draw || nextState.lastDiscard !== undefined || !sameState(previous.scores, nextState.scores) || (previous.riichiPot ?? 0) !== (nextState.riichiPot ?? 0)) return false
+  const beforeHand = previous.hands?.[senderId] ?? [], afterHand = nextState.hands?.[senderId] ?? []
+  const beforeMelds = previous.melds?.[senderId] ?? [], afterMelds = nextState.melds?.[senderId] ?? []
+  const beforeOpen = previous.openMelds?.[senderId] ?? [], afterOpen = nextState.openMelds?.[senderId] ?? []
+  if (!Array.isArray(beforeHand) || !Array.isArray(afterHand) || !Array.isArray(previous.wall) || !Array.isArray(nextState.wall) || previous.wall.length < 1) return false
+  const concealedCount = 13 - beforeMelds.length * 3
+  if (beforeHand.length !== concealedCount || !sameState(nextState.wall, previous.wall.slice(1))) return false
+  for (const member of room.members) {
+    if (member.id === senderId) continue
+    if (!sameState(previous.hands?.[member.id], nextState.hands?.[member.id]) || !sameState(previous.melds?.[member.id], nextState.melds?.[member.id]) || !sameState(previous.openMelds?.[member.id], nextState.openMelds?.[member.id])) return false
+  }
+  const drawn = previous.wall[0]
+  const beforeWithDraw = [...beforeHand, drawn]
+  if (kind === 'ankan') {
+    const meld = afterMelds.at(-1)
+    if (afterMelds.length !== beforeMelds.length + 1 || !sameState(afterMelds.slice(0, -1), beforeMelds) || !Array.isArray(meld) || meld.length !== 4 || afterOpen.length !== beforeOpen.length + 1 || !sameState(afterOpen.slice(0, -1), beforeOpen) || afterOpen.at(-1) !== false || afterHand.length !== beforeHand.length - 3) return false
+    const meldKey = mahjongTileKey(meld[0])
+    if (!meld.every(tile => mahjongTileKey(tile) === meldKey) || beforeWithDraw.filter(tile => mahjongTileKey(tile) === meldKey).length < 4) return false
+    const expected = [...beforeWithDraw]; for (let index = 0; index < 4; index++) expected.splice(expected.findIndex(tile => mahjongTileKey(tile) === meldKey), 1)
+    return sameState(expected, afterHand)
+  }
+  if (afterMelds.length !== beforeMelds.length || !sameState(afterOpen, beforeOpen) || afterHand.length !== beforeHand.length) return false
+  const changed = beforeMelds.findIndex((group, index) => group.length === 3 && group.every(tile => mahjongTileKey(tile) === mahjongTileKey(group[0])) && afterMelds[index]?.length === 4 && afterMelds[index].every(tile => mahjongTileKey(tile) === mahjongTileKey(group[0])))
+  if (changed < 0 || beforeOpen[changed] === false || beforeWithDraw.filter(tile => mahjongTileKey(tile) === mahjongTileKey(beforeMelds[changed][0])).length < 1) return false
+  if (afterMelds.some((group, index) => index !== changed && !sameState(group, beforeMelds[index]))) return false
+  const expected = [...beforeWithDraw]; expected.splice(expected.findIndex(tile => mahjongTileKey(tile) === mahjongTileKey(beforeMelds[changed][0])), 1)
+  return sameState(expected, afterHand)
 }
 
 function canUpdateTetrisState(room, previous, nextState, senderId) {
@@ -355,7 +389,7 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
     if (canUpdateMahjongDiscard(room, previous, nextState, senderId)) return true
     if (canUpdateMahjongWin(room, previous, nextState, senderId)) return true
     if (isMahjongCall(room, previous, nextState, senderId)) return true
-    return Boolean(previous.turn === senderId && ['ankan', 'kakan'].includes(nextState.calledMeld?.kind) && !nextState.winner && !nextState.winInfo && sameState(previous.scores, nextState.scores))
+    return isMahjongSelfKan(room, previous, nextState, senderId)
   }
   const colors = colorTurnGames[game]
   if (colors) {

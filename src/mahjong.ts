@@ -9,6 +9,7 @@ export type MahjongWinOptions = {
   seatWind?: 1 | 2 | 3 | 4
   roundWind?: 1 | 2 | 3 | 4
   doraIndicators?: MahjongTile[]
+  meldOpen?: boolean[]
 }
 
 type Group = { kind: 'pair' | 'sequence' | 'triplet' | 'quad'; tiles: MahjongTile[]; open: boolean }
@@ -26,19 +27,19 @@ function countTiles(tiles: MahjongTile[]) {
   return counts
 }
 
-function fixedGroups(melds: MahjongTile[][]) {
-  return melds.map(tiles => ({
+function fixedGroups(melds: MahjongTile[][], openMelds: boolean[] = []) {
+  return melds.map((tiles, index) => ({
     tiles,
-    open: true,
+    open: openMelds[index] !== false,
     kind: tiles.length === 4 ? 'quad' as const : tiles.every(tile => key(tile) === key(tiles[0])) ? 'triplet' as const : 'sequence' as const,
   }))
 }
 
-function standardDecompositions(hand: MahjongTile[], melds: MahjongTile[][]): Group[][] {
+function standardDecompositions(hand: MahjongTile[], melds: MahjongTile[][], openMelds: boolean[] = []): Group[][] {
   const needed = 14 - melds.length * 3
   if (hand.length !== needed) return []
   const counts = countTiles(hand)
-  const fixed = fixedGroups(melds)
+  const fixed = fixedGroups(melds, openMelds)
   const results: Group[][] = []
   const take = (value: string, amount: number) => {
     const current = counts.get(value) ?? 0
@@ -141,9 +142,9 @@ export function evaluateMahjongWin(hand: MahjongTile[], melds: MahjongTile[][], 
     const thirteenSided = Boolean(options.winningTile) && terminalKeys.every(value => (counts.get(value) ?? 0) === (value === key(options.winningTile!) ? 2 : 1))
     return { yaku: [thirteenSided ? '国士無双十三面待ち' : '国士無双'], han: thirteenSided ? 26 : 13, fu: 0, ...pointInfo(13, 0, thirteenSided ? 2 : 1), yakuman: thirteenSided ? 2 : 1 }
   }
-  const decompositions = sevenPairs ? [[]] : standardDecompositions(hand, melds)
+  const decompositions = sevenPairs ? [[]] : standardDecompositions(hand, melds, options.meldOpen)
   if (!decompositions.length) return null
-  const closed = melds.length === 0
+  const closed = melds.every((_meld, index) => options.meldOpen?.[index] === false)
   const candidates: MahjongWinInfo[] = decompositions.map((groups): MahjongWinInfo | null => {
     const yaku: string[] = []
     let han = 0
