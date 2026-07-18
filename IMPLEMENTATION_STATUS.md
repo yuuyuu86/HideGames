@@ -42,5 +42,5 @@
 ## 外部設定・権限待ち
 
 - YouTube検索APIキーの設定（検索エンドポイント実装済み）
-- NAT越えが必要な環境でのボイスチャット用TURNサーバー
+- NAT越えが必要な環境でのボイスチャット用TURNサーバーの接続情報（`TURN_URL`、`TURN_USERNAME`、`TURN_CREDENTIAL` をRenderまたは実行環境へ設定するとランタイムで反映）
 - macOS/Windowsおよびモニターごとの物理ディスプレイ明るさ制御

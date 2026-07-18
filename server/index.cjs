@@ -9,6 +9,9 @@ const database = require('./db.cjs')
 const port = Number(process.env.PORT || 3001)
 const jwtSecret = process.env.AUTH_JWT_SECRET || null
 const youtubeApiKey = process.env.YOUTUBE_API_KEY || null
+const turnUrl = process.env.TURN_URL || process.env.VITE_TURN_URL || null
+const turnUsername = process.env.TURN_USERNAME || process.env.VITE_TURN_USERNAME || null
+const turnCredential = process.env.TURN_CREDENTIAL || process.env.VITE_TURN_CREDENTIAL || null
 const distDirectory = path.resolve(__dirname, '..', 'dist')
 const startedAt = Date.now()
 const release = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local'
@@ -54,6 +57,12 @@ async function handleHttp(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {})
   if (request.method === 'GET' && request.url === '/health') return sendJson(response, 200, { ok: true, persistence: database.enabled, auth: Boolean(jwtSecret), uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), rooms: rooms.size, sockets: io.engine.clientsCount, release })
   const url = new URL(request.url, 'http://localhost')
+  if (url.pathname === '/api/rtc-config') {
+    if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' })
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]
+    if (turnUrl && turnUsername && turnCredential && turnUrl.length <= 500 && turnUsername.length <= 200 && turnCredential.length <= 500) iceServers.push({ urls: turnUrl, username: turnUsername, credential: turnCredential })
+    return sendJson(response, 200, { iceServers })
+  }
   if (url.pathname === '/api/youtube/search') {
     if (request.method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed' })
     if (!youtubeApiKey) return sendJson(response, 503, { error: 'YouTube検索はまだ設定されていません' })

@@ -216,13 +216,25 @@ function VoiceChat({ playerId, sendSignal, onSignal, announceVoice, onVoice }: {
   const audios = useRef(new Map<string, HTMLAudioElement>())
   const activeRef = useRef(false)
   const volume=useSavedVolume('voice')
+  const [iceServers, setIceServers] = useState<RTCIceServer[]>(() => {
+    const turnUrl=import.meta.env.VITE_TURN_URL;const turnUser=import.meta.env.VITE_TURN_USERNAME;const turnCredential=import.meta.env.VITE_TURN_CREDENTIAL
+    return [{ urls: 'stun:stun.l.google.com:19302' }, ...(turnUrl&&turnUser&&turnCredential?[{urls:turnUrl,username:turnUser,credential:turnCredential}]:[])]
+  })
   activeRef.current = active
+  useEffect(() => {
+    const localHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    const base = import.meta.env.VITE_SOCKET_URL || (localHost ? `http://${window.location.hostname}:3001` : window.location.origin)
+    void fetch(`${base}/api/rtc-config`).then(async response => {
+      const payload = await response.json() as { iceServers?: RTCIceServer[] }
+      if (!response.ok || !Array.isArray(payload.iceServers) || !payload.iceServers.length) return
+      setIceServers(payload.iceServers.filter(server => typeof server?.urls === 'string' || Array.isArray(server?.urls)).slice(0, 4))
+    }).catch(() => undefined)
+  }, [])
   const closePeer = (id: string) => { peers.current.get(id)?.close(); peers.current.delete(id); const audio=audios.current.get(id);audio?.pause();audio?.remove();audios.current.delete(id) }
   const close = () => { if(activeRef.current)announceVoice(false); peers.current.forEach(peer => peer.close()); peers.current.clear(); audios.current.forEach(audio => { audio.pause();audio.remove() }); audios.current.clear(); stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setActive(false); setMuted(false); setStatus('ボイス未参加') }
   const peer = (target: string) => {
     const existing = peers.current.get(target); if (existing) return existing
-    const turnUrl=import.meta.env.VITE_TURN_URL;const turnUser=import.meta.env.VITE_TURN_USERNAME;const turnCredential=import.meta.env.VITE_TURN_CREDENTIAL
-    const connection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...(turnUrl&&turnUser&&turnCredential?[{urls:turnUrl,username:turnUser,credential:turnCredential}]:[])] })
+    const connection = new RTCPeerConnection({ iceServers })
     stream.current?.getTracks().forEach(track => connection.addTrack(track, stream.current!))
     connection.onicecandidate = event => { if (event.candidate) sendSignal(target, event.candidate.toJSON()) }
     connection.ontrack = event => { const audio = new Audio(); audio.autoplay = true; audio.volume=volume/100; audio.srcObject = event.streams[0]; audios.current.set(target, audio); void audio.play().catch(() => undefined) }
