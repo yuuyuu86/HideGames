@@ -473,6 +473,7 @@ const buildWall = (): Tile[] => { const tiles=['m', 'p', 's'].flatMap(suit => Ar
 const winningHand = (hand: Tile[], melds = 0) => {
   if (hand.length !== 14 - melds * 3) return false
   const counts = new Map<string, number>(); hand.forEach(tile => counts.set(tileKey(tile), (counts.get(tileKey(tile)) ?? 0) + 1))
+  if (melds === 0 && counts.size === 7 && [...counts.values()].every(count => count === 2)) return true
   const take = (key: string, amount: number) => { const count = counts.get(key) ?? 0; if (count < amount) return false; counts.set(key, count - amount); return true }
   const put = (key: string, amount: number) => counts.set(key, (counts.get(key) ?? 0) + amount)
   const groups = (left: number): boolean => {
@@ -505,7 +506,7 @@ function MahjongGame({ paused, sharedState, syncState, members, playerId }: { pa
     else if(numberSuits.size===1&&honors.length)add('混一色',open?2:3)
     else if(numberSuits.size===1)add('清一色',open?5:6)
     if(all.every(tile=>tile.suit==='z'||tile.rank===1||tile.rank===9))add('混老頭',2)
-    const handCounts=hand.reduce<Record<string,number>>((counts,tile)=>({...counts,[tileKey(tile)]:(counts[tileKey(tile)]??0)+1}),{});const handOnlyTriplets=Object.values(handCounts).every(count=>count===2||count===3)&&Object.values(handCounts).filter(count=>count===2).length===1;const meldOnlyTriplets=myMelds.every(group=>group.every(tile=>tileKey(tile)===tileKey(group[0])));if(handOnlyTriplets&&meldOnlyTriplets)add('対々和',2)
+    const handCounts=hand.reduce<Record<string,number>>((counts,tile)=>({...counts,[tileKey(tile)]:(counts[tileKey(tile)]??0)+1}),{});const sevenPairs=!myMelds.length&&Object.keys(handCounts).length===7&&Object.values(handCounts).every(count=>count===2);if(sevenPairs)add('七対子',2);const handOnlyTriplets=Object.values(handCounts).every(count=>count===2||count===3)&&Object.values(handCounts).filter(count=>count===2).length===1;const meldOnlyTriplets=myMelds.every(group=>group.every(tile=>tileKey(tile)===tileKey(group[0])));if(handOnlyTriplets&&meldOnlyTriplets)add('対々和',2)
     const honorCounts=honors.reduce<Record<number,number>>((counts,tile)=>({...counts,[tile.rank]:(counts[tile.rank]??0)+1}),{});Object.entries(honorCounts).filter(([,count])=>count>=3).forEach(([rank])=>add(`役牌 ${['東','南','西','北','白','發','中'][Number(rank)-1]}`,1))
     if(!yaku.length)return null
     const points=han>=13?32000:Math.min(32000,Math.ceil((30*2**(han+2)*4)/100)*100)
