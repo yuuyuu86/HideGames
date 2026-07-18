@@ -22,7 +22,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 960, minHeight: 680, backgroundColor: '#08111e', titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false } })
   mainWindow.loadURL(process.env.HIDEGAMES_DEV_URL || 'http://127.0.0.1:5173')
   mainWindow.webContents.on('did-fail-load', (_event, code, description, url) => console.error('Renderer load failed:', code, description, url))
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => console.error(`Renderer console [${level}] ${sourceId}:${line} ${message}`))
+  mainWindow.webContents.on('console-message', details => console.error(`Renderer console [${details.level}] ${details.sourceId}:${details.lineNumber} ${details.message}`))
   mainWindow.webContents.on('render-process-gone', (_event, details) => console.error('Renderer process exited:', details.reason))
   mainWindow.webContents.once('did-finish-load', () => { if (pendingRoomCode) send('room-link', pendingRoomCode) })
 }
