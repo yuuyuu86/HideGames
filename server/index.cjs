@@ -152,6 +152,27 @@ const colorTurnGames = {
   othello: ['b', 'w'], gomoku: ['black', 'white'], connect4: ['red', 'yellow'], shogi: ['b', 'w'], go: ['b', 'w'], chess: ['w', 'b'],
 }
 
+function isMahjongCall(room, previous, nextState, senderId) {
+  const discard = previous.lastDiscard
+  const call = nextState.calledMeld
+  if (!discard?.owner || discard.owner === senderId || !call || !['pon', 'chi'].includes(call.kind)) return false
+  if (nextState.turn !== senderId || (nextState.melds?.[senderId]?.length ?? 0) !== (previous.melds?.[senderId]?.length ?? 0) + 1) return false
+  const beforeHand = previous.hands?.[senderId] ?? []
+  const afterHand = nextState.hands?.[senderId] ?? []
+  if (afterHand.length !== beforeHand.length - 2) return false
+  const meld = nextState.melds?.[senderId]?.at(-1)
+  if (!Array.isArray(meld) || meld.length !== 3) return false
+  const keys = meld.map(tile => `${tile?.suit}${tile?.rank}`)
+  const discardKey = `${discard.tile?.suit}${discard.tile?.rank}`
+  if (keys.filter(key => key === discardKey).length !== 1) return false
+  if (call.kind === 'pon') return keys.every(key => key === discardKey)
+  const ownerIndex = room.members.findIndex(member => member.id === discard.owner)
+  if (room.members[(ownerIndex + 1) % room.members.length]?.id !== senderId) return false
+  const suits = meld.map(tile => tile?.suit)
+  const ranks = meld.map(tile => Number(tile?.rank)).sort((a, b) => a - b)
+  return suits.every(suit => suit === suits[0] && suit !== 'z') && ranks[1] === ranks[0] + 1 && ranks[2] === ranks[1] + 1
+}
+
 function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (game === 'tag' || !nextState || typeof nextState !== 'object') return false
   if (game === 'tournament') return isHost
@@ -161,7 +182,7 @@ function canUpdateGameState(room, game, nextState, senderId, isHost) {
   if (!previous || typeof previous !== 'object') return isHost
   if (previous.winner || previous.loser || previous.lost || previous.draw) return isHost
   if (game === 'mahjong' && nextState.winner === senderId && nextState.winType === 'ron' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId) return true
-  if (game === 'mahjong' && previous.lastDiscard?.owner && previous.lastDiscard.owner !== senderId && nextState.turn === senderId && (nextState.melds?.[senderId]?.length ?? 0) > (previous.melds?.[senderId]?.length ?? 0)) return true
+  if (game === 'mahjong' && isMahjongCall(room, previous, nextState, senderId)) return true
   const colors = colorTurnGames[game]
   if (colors) {
     const playerIndex = colors.indexOf(previous.turn)
