@@ -361,6 +361,7 @@ io.on('connection', socket => {
     if (event.type === 'chat' && typeof event.message?.text === 'string' && event.message.text.trim().length <= 500) {
       room.messages = [...room.messages.slice(-99), { ...event.message, id: `${Date.now()}-${socket.data.memberId}`, name: sender.name, tone: sender.color, text: event.message.text.trim() }]
     }
+    if (socket.data.spectator && event.type !== 'chat') return broadcastRoom(code)
     if (event.type === 'ready' && event.id === socket.data.memberId) room.members = room.members.map(member => member.id === event.id ? { ...member, ready: Boolean(event.ready) } : member)
     if (event.type === 'game') {
       if (!isHost || typeof event.game !== 'string' || event.game.length > 40) return broadcastRoom(code)
