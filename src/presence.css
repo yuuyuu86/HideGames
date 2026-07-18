@@ -1,1 +1,2 @@
 .live-dot.reconnecting{color:#e5bf72}.live-dot.reconnecting:before{background:#e5bf72}.member.reconnecting{opacity:.72}.member.reconnecting .avatar{filter:saturate(.55)}.member.reconnecting .ready{color:#e5bf72}.member.reconnecting .ready svg{animation:presence-pulse 1.2s ease-in-out infinite}@keyframes presence-pulse{50%{opacity:.35}}
+.auth-logged-in{display:grid;align-content:start;gap:10px}.auth-logged-in small{color:#8ea6b5;font-size:11px;line-height:1.55}
